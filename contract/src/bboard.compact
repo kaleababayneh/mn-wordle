@@ -1,0 +1,113 @@
+pragma language_version >= 0.16 && <= 0.18;
+
+import CompactStandardLibrary;
+
+export struct Word {
+  first_letter : Uint<8>;
+  second_letter : Uint<8>;
+  third_letter : Uint<8>;
+  fourth_letter : Uint<8>;
+  fifth_letter : Uint<8>;
+}
+
+export struct GuessResult {
+  first_letter_result : Uint<2>;
+  second_letter_result : Uint<2>;
+  third_letter_result : Uint<2>;
+  fourth_letter_result : Uint<2>;
+  fifth_letter_result : Uint<2>;
+}
+
+enum State { 
+  NOT_STARTED,
+  STARTED,
+  ENDED 
+}
+
+export ledger GameState: State;
+export ledger player_one:  ZswapCoinPublicKey;
+export ledger player_two:  ZswapCoinPublicKey;
+
+export ledger player_one_word_hash: Bytes<32>;
+export ledger player_two_word_hash: Bytes<32>;
+
+export ledger whose_turn: Uint<1>; // 0 for player one, 1 for player two
+export ledger last_result: GuessResult;
+
+
+witness localSecretKey(): Vector<5, Uint<8>>;
+witness localSalt(): Bytes<32>;
+
+
+constructor() {
+  player_one = ownPublicKey();
+  player_two = ownPublicKey();
+  const localSecretKey_hashed = persistentHash<Vector<5, Uint<8>>>(disclose(localSecretKey()));
+  player_one_word_hash = persistentHash<Vector<3, Bytes<32>>>([pad(32, "bboard:word:"), localSecretKey_hashed, disclose(localSalt())]);
+  GameState = State.NOT_STARTED;
+  whose_turn = 0;
+}
+
+export circuit joinGame(opponent: ZswapCoinPublicKey, opponent_word_hash: Bytes<32> ) : [] {
+  assert(GameState == State.NOT_STARTED, "Game already started");
+  assert(player_one == player_two, "Game already has two players");
+  player_two = ownPublicKey();
+  const localSecretKey_hashed = persistentHash<Vector<5, Uint<8>>>(disclose(localSecretKey()));
+  player_two_word_hash = persistentHash<Vector<3, Bytes<32>>>([pad(32, "bboard:word:"), localSecretKey_hashed, disclose(localSalt())]);
+  assert(player_one != player_two, "Player cannot play against themselves");
+  GameState = State.STARTED;
+}
+
+export circuit guess( word: Word, attempt: Word, player: ZswapCoinPublicKey ): GuessResult {
+  assert(GameState == State.STARTED, "Game is not started");
+  if (whose_turn == 0) {
+    assert(player == player_one, "Not your turn");
+  } else {
+    assert(player == player_two, "Not your turn");
+  }
+  // return 0 if the letter doesnt exist in the word
+  // return 1 if the letter exists in the word but is in the wrong position
+  // return 2 if the letter is in the correct position
+  const the_game_result = GuessResult {
+    first_letter_result: evaluateLetter(word.first_letter, attempt, 0),
+    second_letter_result: evaluateLetter(word.second_letter, attempt, 1),
+    third_letter_result: evaluateLetter(word.third_letter, attempt, 2),
+    fourth_letter_result: evaluateLetter(word.fourth_letter, attempt, 3),
+    fifth_letter_result: evaluateLetter(word.fifth_letter, attempt, 4),
+  };
+
+  if (the_game_result.first_letter_result == 2 &&
+      the_game_result.second_letter_result == 2 &&
+      the_game_result.third_letter_result == 2 &&
+      the_game_result.fourth_letter_result == 2 &&
+      the_game_result.fifth_letter_result == 2) {
+    GameState = State.ENDED;
+  }
+  whose_turn = 1 - whose_turn; // switch turn
+  return the_game_result;
+}
+
+export circuit evaluateLetter( letter: Uint<8>, attempt: Word, position: Uint<3> ): Uint<2> {
+  if (letter == getLetterAtPosition(attempt, position)) {
+    return 2;
+  } else if (letter == attempt.first_letter || letter == attempt.second_letter || letter == attempt.third_letter || letter == attempt.fourth_letter || letter == attempt.fifth_letter) {
+    return 1;
+  } else {
+    return 0;
+  }
+}
+
+export circuit getLetterAtPosition( word: Word, position: Uint<3> ): Uint<8> {
+  if (position == 0) {
+    return word.first_letter;
+  } else if (position == 1) {
+    return word.second_letter;
+  } else if (position == 2) {
+    return word.third_letter;
+  } else if (position == 3) {
+    return word.fourth_letter;
+  } else {
+    return word.fifth_letter;
+  }
+}
+
