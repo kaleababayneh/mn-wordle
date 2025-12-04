@@ -36,7 +36,8 @@ export interface DeployedWordleAPI {
   
   // Game actions
   makeGuess: (word: string) => Promise<void>;
-  verifyGuess: () => Promise<void>;
+  verifyP1Guess: () => Promise<void>;  // Player 2 verifies Player 1's guess
+  verifyP2Guess: () => Promise<void>;  // Player 1 verifies Player 2's guess
   
   // Utility methods
   stringToWord: (word: string) => Word;
@@ -96,8 +97,10 @@ export class WordleAPI implements DeployedWordleAPI {
         else if (isPlayer2) playerRole = 'player2';
 
         const isMyTurn = 
-          (ledgerState.game_state === GameState.P1_TURN && isPlayer1) ||
-          (ledgerState.game_state === GameState.P2_TURN && isPlayer2);
+          (ledgerState.game_state === GameState.P1_GUESS_TURN && isPlayer1) ||
+          (ledgerState.game_state === GameState.P2_GUESS_TURN && isPlayer2) ||
+          (ledgerState.game_state === GameState.P1_VERIFY_TURN && isPlayer1) ||
+          (ledgerState.game_state === GameState.P2_VERIFY_TURN && isPlayer2);
 
         const canJoin = 
           (ledgerState.game_state === GameState.WAITING_P1 && !ledgerState.p1.is_some) ||
@@ -256,16 +259,33 @@ export class WordleAPI implements DeployedWordleAPI {
   }
 
   /**
-   * Verify the opponent's guess (only for Player 1).
+   * Player 2 verifies Player 1's guess.
    */
-  async verifyGuess(): Promise<void> {
-    this.logger?.info('verifyGuess');
+  async verifyP1Guess(): Promise<void> {
+    this.logger?.info('verifyP1Guess');
 
-    const txData = await this.deployedContract.callTx.verify_guess();
+    const txData = await this.deployedContract.callTx.verify_p1_guess();
 
     this.logger?.trace({
       transactionAdded: {
-        circuit: 'verify_guess',
+        circuit: 'verify_p1_guess',
+        txHash: txData.public.txHash,
+        blockHeight: txData.public.blockHeight,
+      },
+    });
+  }
+
+  /**
+   * Player 1 verifies Player 2's guess.
+   */
+  async verifyP2Guess(): Promise<void> {
+    this.logger?.info('verifyP2Guess');
+
+    const txData = await this.deployedContract.callTx.verify_p2_guess();
+
+    this.logger?.trace({
+      transactionAdded: {
+        circuit: 'verify_p2_guess',
         txHash: txData.public.txHash,
         blockHeight: txData.public.blockHeight,
       },

@@ -10,12 +10,14 @@ export type PrivateStateId = typeof bboardPrivateStateKey;
 // Game states enum matching the contract
 export enum GameState {
   WAITING_P1 = 0,
-  WAITING_P2 = 1, 
-  P1_TURN = 2,
-  P2_TURN = 3,
-  P1_WINS = 4,
-  P2_WINS = 5,
-  DRAW = 6
+  WAITING_P2 = 1,
+  P1_GUESS_TURN = 2,
+  P2_VERIFY_TURN = 3,
+  P2_GUESS_TURN = 4,
+  P1_VERIFY_TURN = 5,
+  P1_WINS = 6,
+  P2_WINS = 7,
+  DRAW = 8,
 }
 
 /**

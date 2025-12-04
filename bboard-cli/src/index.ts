@@ -134,7 +134,17 @@ const displayLedgerState = async (
   if (ledgerState === null) {
     logger.info(`There is no Wordle contract deployed at ${contractAddress}`);
   } else {
-    const gameStateNames = ['waiting_p1', 'waiting_p2', 'p1_turn', 'p2_turn', 'p1_wins', 'p2_wins', 'draw'];
+    const gameStateNames = [
+      'waiting_p1', 
+      'waiting_p2', 
+      'p1_guess_turn', 
+      'p2_verify_turn', 
+      'p2_guess_turn', 
+      'p1_verify_turn', 
+      'p1_wins', 
+      'p2_wins', 
+      'draw'
+    ];
     logger.info(`Game state: ${gameStateNames[ledgerState.game_state] || 'unknown'}`);
     logger.info(`P1 joined: ${ledgerState.p1.is_some ? 'Yes' : 'No'}`);
     logger.info(`P2 joined: ${ledgerState.p2.is_some ? 'Yes' : 'No'}`);
@@ -182,7 +192,17 @@ const displayDerivedState = (gameState: WordleDerivedState | undefined, logger: 
   if (gameState === undefined) {
     logger.info(`No Wordle game state currently available`);
   } else {
-    const gameStateNames = ['waiting_p1', 'waiting_p2', 'p1_turn', 'p2_turn', 'p1_wins', 'p2_wins', 'draw'];
+    const gameStateNames = [
+      'waiting_p1', 
+      'waiting_p2', 
+      'p1_guess_turn', 
+      'p2_verify_turn', 
+      'p2_guess_turn', 
+      'p1_verify_turn', 
+      'p1_wins', 
+      'p2_wins', 
+      'draw'
+    ];
     logger.info(`Game State: ${gameStateNames[gameState.gameState] || 'unknown'}`);
     logger.info(`Your role: ${gameState.playerRole}`);
     logger.info(`Is Player 1: ${gameState.isPlayer1}`);
@@ -218,11 +238,12 @@ You can do one of the following:
   1. Join as Player 1 (with your word)
   2. Join as Player 2 (with your word)  
   3. Make a guess at opponent's word
-  4. Verify opponent's guess (Player 1 only)
-  5. Display the current ledger state (known by everyone)
-  6. Display the current private state (known only to this DApp instance)
-  7. Display the current derived state (known only to this DApp instance)
-  8. Exit
+  4. Verify Player 1's guess (Player 2 only)
+  5. Verify Player 2's guess (Player 1 only)
+  6. Display the current ledger state (known by everyone)
+  7. Display the current private state (known only to this DApp instance)
+  8. Display the current derived state (known only to this DApp instance)
+  9. Exit
 Which would you like to do? `;
 
 const mainLoop = async (providers: WordleProviders, rli: Interface, logger: Logger): Promise<void> => {
@@ -283,22 +304,30 @@ const mainLoop = async (providers: WordleProviders, rli: Interface, logger: Logg
         }
         case '4':
           try {
-            await wordleApi.verifyGuess();
-            logger.info('Guess verified!');
+            await wordleApi.verifyP1Guess();
+            logger.info('Player 1\'s guess verified!');
           } catch (error) {
-            logger.error(`Failed to verify guess: ${error}`);
+            logger.error(`Failed to verify Player 1's guess: ${error}`);
           }
           break;
         case '5':
-          await displayLedgerState(providers, wordleApi.deployedContract, logger);
+          try {
+            await wordleApi.verifyP2Guess();
+            logger.info('Player 2\'s guess verified!');
+          } catch (error) {
+            logger.error(`Failed to verify Player 2's guess: ${error}`);
+          }
           break;
         case '6':
-          await displayPrivateState(providers, logger);
+          await displayLedgerState(providers, wordleApi.deployedContract, logger);
           break;
         case '7':
-          displayDerivedState(currentState, logger);
+          await displayPrivateState(providers, logger);
           break;
         case '8':
+          displayDerivedState(currentState, logger);
+          break;
+        case '9':
           logger.info('Exiting...');
           return;
         default:
@@ -496,7 +525,7 @@ export const run = async (config: Config, logger: Logger, dockerEnv?: DockerComp
           privateStateStoreName: uniquePrivateStateName,
         }),
         publicDataProvider: indexerPublicDataProvider(config.indexer, config.indexerWS),
-        zkConfigProvider: new NodeZkConfigProvider<'join_p1' | 'join_p2' | 'turn_player1' | 'turn_player2' | 'verify_guess'>(config.zkConfigPath),
+        zkConfigProvider: new NodeZkConfigProvider<'join_p1' | 'join_p2' | 'turn_player1' | 'turn_player2' | 'verify_p1_guess' | 'verify_p2_guess'>(config.zkConfigPath),
         proofProvider: httpClientProofProvider(config.proofServer),
         walletProvider: walletAndMidnightProvider,
         midnightProvider: walletAndMidnightProvider,
