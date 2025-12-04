@@ -1,80 +1,61 @@
-// This file is part of midnightntwrk/example-counter.
-// Copyright (C) 2025 Midnight Foundation
-// SPDX-License-Identifier: Apache-2.0
-// Licensed under the Apache License, Version 2.0 (the "License");
-// You may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
-/**
- * Provides types and utilities for working with bulletin board contracts.
- *
- * @packageDocumentation
- */
 
 import contractModule from '../../contract/src/managed/bboard/contract/index.cjs';
-const { Contract, ledger, pureCircuits, State } = contractModule;
-// import { Contract, ledger, pureCircuits, State } from '../../contract/src/index';
+const { Contract, ledger, pureCircuits } = contractModule;
 
-import { type ContractAddress, convert_bigint_to_Uint8Array } from '@midnight-ntwrk/compact-runtime';
+import { type ContractAddress } from '@midnight-ntwrk/compact-runtime';
 import { type Logger } from 'pino';
 import {
-  type BBoardDerivedState,
-  type BBoardContract,
-  type BBoardProviders,
-  type DeployedBBoardContract,
+  type WordleDerivedState,
+  type WordleContract,
+  type WordleProviders,
+  type DeployedWordleContract,
+  type Word,
+  GameState,
+  type GuessResult,
   bboardPrivateStateKey,
 } from './common-types.js';
-// import { Contract, ledger, pureCircuits, State } from '../../contract/src/managed/bboard/contract/index.cjs';
 import { type BBoardPrivateState, createBBoardPrivateState, witnesses } from '../../contract/src/index';
 import * as utils from './utils/index.js';
 import { deployContract, findDeployedContract } from '@midnight-ntwrk/midnight-js-contracts';
-import { combineLatest, map, tap, from, type Observable } from 'rxjs';
+import { combineLatest, map, tap, from, type Observable, firstValueFrom } from 'rxjs';
 import { toHex } from '@midnight-ntwrk/midnight-js-utils';
 
 /** @internal */
-const bboardContractInstance: BBoardContract = new Contract(witnesses);
+const wordleContractInstance: WordleContract = new Contract(witnesses);
 
 /**
- * An API for a deployed bulletin board.
+ * An API for a deployed P2P ZK Wordle game.
  */
-export interface DeployedBBoardAPI {
+export interface DeployedWordleAPI {
   readonly deployedContractAddress: ContractAddress;
-  readonly state$: Observable<BBoardDerivedState>;
+  readonly state$: Observable<WordleDerivedState>;
 
-  post: (message: string) => Promise<void>;
-  takeDown: () => Promise<void>;
+  // Player joining
+  joinAsPlayer1: (word: string) => Promise<void>;
+  joinAsPlayer2: (word: string) => Promise<void>;
+  
+  // Game actions
+  makeGuess: (word: string) => Promise<void>;
+  verifyGuess: () => Promise<void>;
+  
+  // Utility methods
+  stringToWord: (word: string) => Word;
+  wordToString: (word: Word) => string;
 }
 
 /**
- * Provides an implementation of {@link DeployedBBoardAPI} by adapting a deployed bulletin board
+ * Provides an implementation of {@link DeployedWordleAPI} by adapting a deployed P2P ZK Wordle
  * contract.
  *
  * @remarks
- * The `BBoardPrivateState` is managed at the DApp level by a private state provider. As such, this
- * private state is shared between all instances of {@link BBoardAPI}, and their underlying deployed
- * contracts. The private state defines a `'secretKey'` property that effectively identifies the current
- * user, and is used to determine if the current user is the owner of the message as the observable
- * contract state changes.
- *
- * In the future, Midnight.js will provide a private state provider that supports private state storage
- * keyed by contract address. This will remove the current workaround of sharing private state across
- * the deployed bulletin board contracts, and allows for a unique secret key to be generated for each bulletin
- * board that the user interacts with.
+ * The `BBoardPrivateState` is managed at the DApp level by a private state provider. The private
+ * state includes the player's secret key, salt, and their chosen word for the game.
  */
-// TODO: Update BBoardAPI to use contract level private state storage.
-export class BBoardAPI implements DeployedBBoardAPI {
+export class WordleAPI implements DeployedWordleAPI {
   /** @internal */
   private constructor(
-    public readonly deployedContract: DeployedBBoardContract,
-    providers: BBoardProviders,
+    public readonly deployedContract: DeployedWordleContract,
+    providers: WordleProviders,
     private readonly logger?: Logger,
   ) {
     this.deployedContractAddress = deployedContract.deployTxData.public.contractAddress;
@@ -88,31 +69,52 @@ export class BBoardAPI implements DeployedBBoardAPI {
               ledgerStateChanged: {
                 ledgerState: {
                   ...ledgerState,
-                  state: ledgerState.state === State.OCCUPIED ? 'occupied' : 'vacant',
-                  owner: toHex(ledgerState.owner),
+                  gameState: ledgerState.game_state,
+                  p1: ledgerState.p1.is_some ? toHex(ledgerState.p1.value) : null,
+                  p2: ledgerState.p2.is_some ? toHex(ledgerState.p2.value) : null,
                 },
               },
             }),
           ),
         ),
         // ...private state...
-        //    since the private state of the bulletin board application never changes, we can query the
-        //    private state once and always use the same value with `combineLatest`. In applications
-        //    where the private state is expected to change, we would need to make this an `Observable`.
         from(providers.privateStateProvider.get(bboardPrivateStateKey) as Promise<BBoardPrivateState>),
       ],
       // ...and combine them to produce the required derived state.
       (ledgerState, privateState) => {
-        const hashedSecretKey = pureCircuits.publicKey(
-          privateState.secretKey,
-          convert_bigint_to_Uint8Array(32, ledgerState.sequence),
-        );
+        const playerIdentity = pureCircuits.public_key(privateState.secretKey);
+
+        const isPlayer1 = ledgerState.p1.is_some && toHex(ledgerState.p1.value) === toHex(playerIdentity);
+        const isPlayer2 = ledgerState.p2.is_some && toHex(ledgerState.p2.value) === toHex(playerIdentity);
+        
+        let playerRole: 'player1' | 'player2' | 'spectator' = 'spectator';
+        if (isPlayer1) playerRole = 'player1';
+        else if (isPlayer2) playerRole = 'player2';
+
+        const isMyTurn = 
+          (ledgerState.game_state === GameState.P1_TURN && isPlayer1) ||
+          (ledgerState.game_state === GameState.P2_TURN && isPlayer2);
+
+        const canJoin = 
+          (ledgerState.game_state === GameState.WAITING_P1 && !ledgerState.p1.is_some) ||
+          (ledgerState.game_state === GameState.WAITING_P2 && !ledgerState.p2.is_some && !isPlayer1);
 
         return {
-          state: ledgerState.state,
-          message: ledgerState.message.value,
-          sequence: ledgerState.sequence,
-          isOwner: toHex(ledgerState.owner) === toHex(hashedSecretKey),
+          gameState: ledgerState.game_state as GameState,
+          currentGuess: ledgerState.current_guess,
+          lastGuessResult: ledgerState.last_guess_result.is_some ? ledgerState.last_guess_result.value : null,
+          
+          p1: ledgerState.p1.is_some ? ledgerState.p1.value : null,
+          p1GuessCount: ledgerState.p1_guess_count,
+          
+          p2: ledgerState.p2.is_some ? ledgerState.p2.value : null,
+          p2GuessCount: ledgerState.p2_guess_count,
+          
+          isPlayer1,
+          isPlayer2,
+          isMyTurn,
+          canJoin,
+          playerRole,
         };
       },
     );
@@ -127,24 +129,21 @@ export class BBoardAPI implements DeployedBBoardAPI {
    * Gets an observable stream of state changes based on the current public (ledger),
    * and private state data.
    */
-  readonly state$: Observable<BBoardDerivedState>;
+  readonly state$: Observable<WordleDerivedState>;
 
   /**
-   * Attempts to post a given message to the bulletin board.
+   * Join the game as Player 1 with a secret word.
    *
-   * @param message The message to post.
-   *
-   * @remarks
-   * This method can fail during local circuit execution if the bulletin board is currently occupied.
+   * @param word The 5-letter word to use for the game.
    */
-  async post(message: string): Promise<void> {
-    this.logger?.info(`postingMessage: ${message}`);
+  async joinAsPlayer1(word: string): Promise<void> {
+    this.logger?.info(`joinAsPlayer1: ${word}`);
 
-    const txData = await this.deployedContract.callTx.post(message);
+    const txData = await this.deployedContract.callTx.join_p1();
 
     this.logger?.trace({
       transactionAdded: {
-        circuit: 'post',
+        circuit: 'join_p1',
         txHash: txData.public.txHash,
         blockHeight: txData.public.blockHeight,
       },
@@ -152,21 +151,18 @@ export class BBoardAPI implements DeployedBBoardAPI {
   }
 
   /**
-   * Attempts to take down any currently posted message on the bulletin board.
+   * Join the game as Player 2 with a secret word.
    *
-   * @remarks
-   * This method can fail during local circuit execution if the bulletin board is currently vacant,
-   * or if the currently posted message isn't owned by the owner computed from the current private
-   * state.
+   * @param word The 5-letter word to use for the game.
    */
-  async takeDown(): Promise<void> {
-    this.logger?.info('takingDownMessage');
+  async joinAsPlayer2(word: string): Promise<void> {
+    this.logger?.info(`joinAsPlayer2: ${word}`);
 
-    const txData = await this.deployedContract.callTx.takeDown();
+    const txData = await this.deployedContract.callTx.join_p2();
 
     this.logger?.trace({
       transactionAdded: {
-        circuit: 'takeDown',
+        circuit: 'join_p2',
         txHash: txData.public.txHash,
         blockHeight: txData.public.blockHeight,
       },
@@ -174,67 +170,156 @@ export class BBoardAPI implements DeployedBBoardAPI {
   }
 
   /**
-   * Deploys a new bulletin board contract to the network.
+   * Make a guess at the opponent's word.
    *
-   * @param providers The bulletin board providers.
+   * @param word The 5-letter word to guess.
+   */
+  async makeGuess(word: string): Promise<void> {
+    this.logger?.info(`makeGuess: ${word}`);
+
+    const wordStruct = this.stringToWord(word);
+
+    // Determine which circuit to call based on current state
+    const state = await firstValueFrom(this.state$);
+    
+    let txData;
+    if (state?.isPlayer1) {
+      txData = await this.deployedContract.callTx.turn_player1(wordStruct);
+    } else if (state?.isPlayer2) {
+      txData = await this.deployedContract.callTx.turn_player2(wordStruct);
+    } else {
+      throw new Error("Not a player in this game");
+    }
+
+    this.logger?.trace({
+      transactionAdded: {
+        circuit: state?.isPlayer1 ? 'turn_player1' : 'turn_player2',
+        txHash: txData.public.txHash,
+        blockHeight: txData.public.blockHeight,
+      },
+    });
+  }
+
+  /**
+   * Verify the opponent's guess (only for Player 1).
+   */
+  async verifyGuess(): Promise<void> {
+    this.logger?.info('verifyGuess');
+
+    const txData = await this.deployedContract.callTx.verify_guess();
+
+    this.logger?.trace({
+      transactionAdded: {
+        circuit: 'verify_guess',
+        txHash: txData.public.txHash,
+        blockHeight: txData.public.blockHeight,
+      },
+    });
+  }
+
+  /**
+   * Convert a string to a Word struct.
+   *
+   * @param word The 5-letter string to convert.
+   * @returns A Word struct with letter values.
+   */
+  stringToWord(word: string): Word {
+    if (word.length !== 5) {
+      throw new Error("Word must be exactly 5 characters");
+    }
+    
+    const letters = word.toUpperCase().split('').map(char => BigInt(char.charCodeAt(0)));
+    
+    return {
+      first_letter: letters[0],
+      second_letter: letters[1],
+      third_letter: letters[2],
+      fourth_letter: letters[3],
+      fifth_letter: letters[4],
+    };
+  }
+
+  /**
+   * Convert a Word struct to a string.
+   *
+   * @param word The Word struct to convert.
+   * @returns A 5-letter string.
+   */
+  wordToString(word: Word): string {
+    return String.fromCharCode(
+      Number(word.first_letter),
+      Number(word.second_letter),
+      Number(word.third_letter),
+      Number(word.fourth_letter),
+      Number(word.fifth_letter)
+    );
+  }
+
+  /**
+   * Deploys a new P2P ZK Wordle contract to the network.
+   *
+   * @param providers The Wordle providers.
    * @param logger An optional 'pino' logger to use for logging.
-   * @returns A `Promise` that resolves with a {@link BBoardAPI} instance that manages the newly deployed
-   * {@link DeployedBBoardContract}; or rejects with a deployment error.
+   * @returns A `Promise` that resolves with a {@link WordleAPI} instance that manages the newly deployed
+   * {@link DeployedWordleContract}; or rejects with a deployment error.
    */
-  static async deploy(providers: BBoardProviders, logger?: Logger): Promise<BBoardAPI> {
+  static async deploy(providers: WordleProviders, logger?: Logger): Promise<WordleAPI> {
     logger?.info('deployContract');
 
-    // EXERCISE 5: FILL IN THE CORRECT ARGUMENTS TO deployContract
-    const deployedBBoardContract = await deployContract<typeof bboardContractInstance>(providers, {
+    const deployedWordleContract = await deployContract<typeof wordleContractInstance>(providers, {
       privateStateId: bboardPrivateStateKey,
-      contract: bboardContractInstance,
-      initialPrivateState: await BBoardAPI.getPrivateState(providers),
+      contract: wordleContractInstance,
+      initialPrivateState: await WordleAPI.getPrivateState(providers),
     });
 
     logger?.trace({
       contractDeployed: {
-        finalizedDeployTxData: deployedBBoardContract.deployTxData.public,
+        finalizedDeployTxData: deployedWordleContract.deployTxData.public,
       },
     });
 
-    return new BBoardAPI(deployedBBoardContract, providers, logger);
+    return new WordleAPI(deployedWordleContract, providers, logger);
   }
 
   /**
-   * Finds an already deployed bulletin board contract on the network, and joins it.
+   * Finds an already deployed P2P ZK Wordle contract on the network, and joins it.
    *
-   * @param providers The bulletin board providers.
-   * @param contractAddress The contract address of the deployed bulletin board contract to search for and join.
+   * @param providers The Wordle providers.
+   * @param contractAddress The contract address of the deployed Wordle contract to search for and join.
    * @param logger An optional 'pino' logger to use for logging.
-   * @returns A `Promise` that resolves with a {@link BBoardAPI} instance that manages the joined
-   * {@link DeployedBBoardContract}; or rejects with an error.
+   * @returns A `Promise` that resolves with a {@link WordleAPI} instance that manages the joined
+   * {@link DeployedWordleContract}; or rejects with an error.
    */
-  static async join(providers: BBoardProviders, contractAddress: ContractAddress, logger?: Logger): Promise<BBoardAPI> {
+  static async join(providers: WordleProviders, contractAddress: ContractAddress, logger?: Logger): Promise<WordleAPI> {
     logger?.info({
       joinContract: {
         contractAddress,
       },
     });
 
-    const deployedBBoardContract = await findDeployedContract<BBoardContract>(providers, {
+    const deployedWordleContract = await findDeployedContract<WordleContract>(providers, {
       contractAddress,
-      contract: bboardContractInstance,
+      contract: wordleContractInstance,
       privateStateId: bboardPrivateStateKey,
-      initialPrivateState: await BBoardAPI.getPrivateState(providers),
+      initialPrivateState: await WordleAPI.getPrivateState(providers),
     });
 
     logger?.trace({
       contractJoined: {
-        finalizedDeployTxData: deployedBBoardContract.deployTxData.public,
+        finalizedDeployTxData: deployedWordleContract.deployTxData.public,
       },
     });
 
-    return new BBoardAPI(deployedBBoardContract, providers, logger);
+    return new WordleAPI(deployedWordleContract, providers, logger);
   }
 
-  private static async getPrivateState(providers: BBoardProviders): Promise<BBoardPrivateState> {
+  private static async getPrivateState(providers: WordleProviders): Promise<BBoardPrivateState> {
     const existingPrivateState = await providers.privateStateProvider.get(bboardPrivateStateKey);
-    return existingPrivateState ?? createBBoardPrivateState(utils.randomBytes(32));
+    return existingPrivateState ?? createBBoardPrivateState(
+      utils.randomBytes(32), // secretKey
+      utils.randomBytes(32), // salt
+      new Uint8Array([67, 82, 65, 78, 69]) // default word "CRANE"
+    );
   }
 }
 
@@ -246,3 +331,7 @@ export class BBoardAPI implements DeployedBBoardAPI {
 export * as utils from './utils/index.js';
 
 export * from './common-types.js';
+
+// Legacy exports for compatibility
+export { WordleAPI as BBoardAPI };
+export type { DeployedWordleAPI as DeployedBBoardAPI };
