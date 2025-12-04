@@ -17,7 +17,7 @@ import {
 import { type BBoardPrivateState, createBBoardPrivateState, witnesses } from '../../contract/src/index';
 import * as utils from './utils/index.js';
 import { deployContract, findDeployedContract } from '@midnight-ntwrk/midnight-js-contracts';
-import { combineLatest, map, tap, from, type Observable, firstValueFrom } from 'rxjs';
+import { combineLatest, map, tap, from, type Observable, firstValueFrom, BehaviorSubject, switchMap } from 'rxjs';
 import { toHex } from '@midnight-ntwrk/midnight-js-utils';
 
 /** @internal */
@@ -52,17 +52,19 @@ export interface DeployedWordleAPI {
  * state includes the player's secret key, salt, and their chosen word for the game.
  */
 export class WordleAPI implements DeployedWordleAPI {
+  private readonly privateStateRefresh$ = new BehaviorSubject<number>(0);
+  
   /** @internal */
   private constructor(
     public readonly deployedContract: DeployedWordleContract,
-    providers: WordleProviders,
+    private readonly providers: WordleProviders,
     private readonly logger?: Logger,
   ) {
     this.deployedContractAddress = deployedContract.deployTxData.public.contractAddress;
     this.state$ = combineLatest(
       [
         // Combine public (ledger) state with...
-        providers.publicDataProvider.contractStateObservable(this.deployedContractAddress, { type: 'latest' }).pipe(
+        this.providers.publicDataProvider.contractStateObservable(this.deployedContractAddress, { type: 'latest' }).pipe(
           map((contractState) => ledger(contractState.data)),
           tap((ledgerState) =>
             logger?.trace({
@@ -77,8 +79,10 @@ export class WordleAPI implements DeployedWordleAPI {
             }),
           ),
         ),
-        // ...private state...
-        from(providers.privateStateProvider.get(bboardPrivateStateKey) as Promise<BBoardPrivateState>),
+        // ...private state (reactive to changes)...
+        this.privateStateRefresh$.pipe(
+          switchMap(() => this.providers.privateStateProvider.get(bboardPrivateStateKey) as Promise<BBoardPrivateState>),
+        ),
       ],
       // ...and combine them to produce the required derived state.
       (ledgerState, privateState) => {
@@ -139,6 +143,22 @@ export class WordleAPI implements DeployedWordleAPI {
   async joinAsPlayer1(word: string): Promise<void> {
     this.logger?.info(`joinAsPlayer1: ${word}`);
 
+    // Update private state with the chosen word
+    const currentPrivateState = await this.providers.privateStateProvider.get(bboardPrivateStateKey);
+    if (!currentPrivateState) {
+      throw new Error("Private state not found. Make sure you've deployed or joined a contract first.");
+    }
+    const wordBytes = new Uint8Array([...word].map(c => c.charCodeAt(0)));
+    const updatedPrivateState = createBBoardPrivateState(
+      currentPrivateState.secretKey,
+      currentPrivateState.salt,
+      wordBytes
+    );
+    await this.providers.privateStateProvider.set(bboardPrivateStateKey, updatedPrivateState);
+
+    // Trigger state refresh
+    this.privateStateRefresh$.next(Date.now());
+
     const txData = await this.deployedContract.callTx.join_p1();
 
     this.logger?.trace({
@@ -157,6 +177,22 @@ export class WordleAPI implements DeployedWordleAPI {
    */
   async joinAsPlayer2(word: string): Promise<void> {
     this.logger?.info(`joinAsPlayer2: ${word}`);
+
+    // Update private state with the chosen word
+    const currentPrivateState = await this.providers.privateStateProvider.get(bboardPrivateStateKey);
+    if (!currentPrivateState) {
+      throw new Error("Private state not found. Make sure you've deployed or joined a contract first.");
+    }
+    const wordBytes = new Uint8Array([...word].map(c => c.charCodeAt(0)));
+    const updatedPrivateState = createBBoardPrivateState(
+      currentPrivateState.secretKey,
+      currentPrivateState.salt,
+      wordBytes
+    );
+    await this.providers.privateStateProvider.set(bboardPrivateStateKey, updatedPrivateState);
+
+    // Trigger state refresh
+    this.privateStateRefresh$.next(Date.now());
 
     const txData = await this.deployedContract.callTx.join_p2();
 
@@ -179,13 +215,32 @@ export class WordleAPI implements DeployedWordleAPI {
 
     const wordStruct = this.stringToWord(word);
 
-    // Determine which circuit to call based on current state
-    const state = await firstValueFrom(this.state$);
+    // Get current private state and ledger state directly (bypassing potentially stale observable)
+    const currentPrivateState = await this.providers.privateStateProvider.get(bboardPrivateStateKey);
+    const ledgerStateObservable = this.providers.publicDataProvider.contractStateObservable(this.deployedContractAddress, { type: 'latest' });
+    const ledgerState = await firstValueFrom(ledgerStateObservable);
+    
+    if (!currentPrivateState) {
+      throw new Error("Private state not found");
+    }
+    
+    // Compute player identity and role directly
+    const playerIdentity = pureCircuits.public_key(currentPrivateState.secretKey);
+    const ledgerData = ledger(ledgerState.data);
+    
+    const isPlayer1 = ledgerData.p1.is_some && toHex(ledgerData.p1.value) === toHex(playerIdentity);
+    const isPlayer2 = ledgerData.p2.is_some && toHex(ledgerData.p2.value) === toHex(playerIdentity);
+    
+    // Debug logging with fresh data
+    this.logger?.info(`makeGuess debug - isPlayer1: ${isPlayer1}, isPlayer2: ${isPlayer2}`);
+    this.logger?.info(`makeGuess debug - gameState: ${ledgerData.game_state}, computed identity: ${toHex(playerIdentity)}`);
+    this.logger?.info(`makeGuess debug - P1 identity: ${ledgerData.p1.is_some ? toHex(ledgerData.p1.value) : 'none'}`);
+    this.logger?.info(`makeGuess debug - P2 identity: ${ledgerData.p2.is_some ? toHex(ledgerData.p2.value) : 'none'}`);
     
     let txData;
-    if (state?.isPlayer1) {
+    if (isPlayer1) {
       txData = await this.deployedContract.callTx.turn_player1(wordStruct);
-    } else if (state?.isPlayer2) {
+    } else if (isPlayer2) {
       txData = await this.deployedContract.callTx.turn_player2(wordStruct);
     } else {
       throw new Error("Not a player in this game");
@@ -193,7 +248,7 @@ export class WordleAPI implements DeployedWordleAPI {
 
     this.logger?.trace({
       transactionAdded: {
-        circuit: state?.isPlayer1 ? 'turn_player1' : 'turn_player2',
+        circuit: isPlayer1 ? 'turn_player1' : 'turn_player2',
         txHash: txData.public.txHash,
         blockHeight: txData.public.blockHeight,
       },
