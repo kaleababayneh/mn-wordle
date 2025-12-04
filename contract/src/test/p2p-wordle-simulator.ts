@@ -209,7 +209,7 @@ export class P2PWordleSimulator {
    */
   verify_guess(): Ledger {
     return this.updateStateAndGetLedger(
-      this.contract.impureCircuits.verify_guess(this.turnContext)
+      this.contract.impureCircuits.verify_p1_guess(this.turnContext)
     );
   }
 }

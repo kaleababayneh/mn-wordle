@@ -398,13 +398,7 @@ export class WordleAPI implements DeployedWordleAPI {
   }
 }
 
-/**
- * A namespace that represents the exports from the `'utils'` sub-package.
- *
- * @public
- */
 export * as utils from './utils/index.js';
-
 export * from './common-types.js';
 
 // Legacy exports for compatibility
