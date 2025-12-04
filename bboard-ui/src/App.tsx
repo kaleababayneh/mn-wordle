@@ -15,17 +15,17 @@
 
 import React, { useEffect, useState } from 'react';
 import { Box } from '@mui/material';
-import { MainLayout, Board } from './components';
+import { MainLayout, WordleGameWrapper } from './components';
 import { useDeployedBoardContext } from './hooks';
 import { type BoardDeployment } from './contexts';
 import { type Observable } from 'rxjs';
 
 /**
- * The root bulletin board application component.
+ * The root P2P Wordle application component.
  *
  * @remarks
  * The {@link App} component requires a `<DeployedBoardProvider />` parent in order to retrieve
- * information about current bulletin board deployments.
+ * information about current Wordle game deployments.
  *
  * @internal
  */
@@ -45,12 +45,12 @@ const App: React.FC = () => {
     <Box sx={{ background: '#000', minHeight: '100vh' }}>
       <MainLayout>
         {boardDeployments.map((boardDeployment, idx) => (
-          <div data-testid={`board-${idx}`} key={`board-${idx}`}>
-            <Board boardDeployment$={boardDeployment} />
+          <div data-testid={`wordle-game-${idx}`} key={`wordle-game-${idx}`}>
+            <WordleGameWrapper boardDeployment$={boardDeployment} />
           </div>
         ))}
-        <div data-testid="board-start">
-          <Board />
+        <div data-testid="wordle-game-start">
+          <WordleGameWrapper />
         </div>
       </MainLayout>
     </Box>

@@ -14,4 +14,5 @@
 // limitations under the License.
 
 export * from './Layout';
-export * from './Board';
+export { default as WordleGame } from './WordleGame';
+export { default as WordleGameWrapper } from './WordleGameWrapper';
