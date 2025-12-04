@@ -1,27 +1,3 @@
-// This file is part of midnightntwrk/example-counter.
-// Copyright (C) 2025 Midnight Foundation
-// SPDX-License-Identifier: Apache-2.0
-// Licensed under the Apache License, Version 2.0 (the "License");
-// You may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
-/*
- * This file is the main driver for the P2P ZK Wordle game.
- * The entry point is the run function, at the end of the file.
- * We expect the startup files (testnet-remote.ts, standalone.ts, etc.) to
- * call run with some specific configuration that sets the network addresses
- * of the servers this file relies on.
- */
-
-// Wallet seed: 8dd96c613b92a1ced03ac5e71a039d4447cfe84928864fc38260b28cd30378c2
 
 import { createInterface, type Interface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
