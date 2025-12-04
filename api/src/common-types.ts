@@ -1,3 +1,4 @@
+
 // This file is part of midnightntwrk/example-counter.
 // Copyright (C) 2025 Midnight Foundation
 // SPDX-License-Identifier: Apache-2.0
@@ -14,17 +15,29 @@
 // limitations under the License.
 
 /**
- * Bulletin board common types and abstractions.
+ * P2P ZK Wordle common types and abstractions.
  *
  * @module
  */
 
 import { type MidnightProviders } from '@midnight-ntwrk/midnight-js-types';
 import { type FoundContract } from '@midnight-ntwrk/midnight-js-contracts';
-import type { State, BBoardPrivateState, Contract, Witnesses } from '../../contract/src/index';
+import type { BBoardPrivateState, Contract, Witnesses } from '../../contract/src/index';
+import type { Ledger, Word, GuessResult, Maybe } from '../../contract/src/managed/bboard/contract/index.cjs';
 
 export const bboardPrivateStateKey = 'bboardPrivateState';
 export type PrivateStateId = typeof bboardPrivateStateKey;
+
+// Game states enum matching the contract
+export enum GameState {
+  WAITING_P1 = 0,
+  WAITING_P2 = 1, 
+  P1_TURN = 2,
+  P2_TURN = 3,
+  P1_WINS = 4,
+  P2_WINS = 5,
+  DRAW = 6
+}
 
 /**
  * The private states consumed throughout the application.
@@ -37,63 +50,97 @@ export type PrivateStateId = typeof bboardPrivateStateKey;
  * and the type (i.e., `typeof PrivateStates[K]`) represents the type of private state
  * expected to be returned.
  *
- * Since there is only one contract type for the bulletin board example, we only define a
+ * Since there is only one contract type for the P2P Wordle game, we only define a
  * single key/type in the schema.
  *
  * @public
  */
 export type PrivateStates = {
   /**
-   * Key used to provide the private state for {@link BBoardContract} deployments.
+   * Key used to provide the private state for {@link WordleContract} deployments.
    */
   readonly bboardPrivateState: BBoardPrivateState;
 };
 
 /**
- * Represents a bulletin board contract and its private state.
+ * Represents a P2P Wordle contract and its private state.
  *
  * @public
  */
-export type BBoardContract = Contract<BBoardPrivateState, Witnesses<BBoardPrivateState>>;
+export type WordleContract = Contract<BBoardPrivateState, Witnesses<BBoardPrivateState>>;
 
 /**
- * The keys of the circuits exported from {@link BBoardContract}.
+ * The keys of the circuits exported from {@link WordleContract}.
  *
  * @public
  */
-export type BBoardCircuitKeys = Exclude<keyof BBoardContract['impureCircuits'], number | symbol>;
+export type WordleCircuitKeys = Exclude<keyof WordleContract['impureCircuits'], number | symbol>;
 
 /**
- * The providers required by {@link BBoardContract}.
+ * The providers required by {@link WordleContract}.
  *
  * @public
  */
-export type BBoardProviders = MidnightProviders<BBoardCircuitKeys, PrivateStateId, BBoardPrivateState>;
+export type WordleProviders = MidnightProviders<WordleCircuitKeys, PrivateStateId, BBoardPrivateState>;
 
 /**
- * A {@link BBoardContract} that has been deployed to the network.
+ * A {@link WordleContract} that has been deployed to the network.
  *
  * @public
  */
-export type DeployedBBoardContract = FoundContract<BBoardContract>;
+export type DeployedWordleContract = FoundContract<WordleContract>;
 
 /**
  * A type that represents the derived combination of public (or ledger), and private state.
  */
-export type BBoardDerivedState = {
-  readonly state: State;
-  readonly sequence: bigint;
-  readonly message: string | undefined;
-
-  /**
-   * A readonly flag that determines if the current message was posted by the current user.
-   *
-   * @remarks
-   * The `owner` property of the public (or ledger) state is the public key of the message owner, while
-   * the `secretKey` property of {@link BBoardPrivateState} is the secret key of the current user. If
-   * `owner` corresponds to the public key derived from `secretKey`, then `isOwner` is `true`.
-   */
-  readonly isOwner: boolean;
+export type WordleDerivedState = {
+  readonly gameState: GameState;
+  readonly currentGuess: Word | null;
+  readonly lastGuessResult: GuessResult | null;
+  
+  // Player 1 state
+  readonly p1: Uint8Array | null;
+  readonly p1GuessCount: bigint;
+  
+  // Player 2 state  
+  readonly p2: Uint8Array | null;
+  readonly p2GuessCount: bigint;
+  
+  // Current user info
+  readonly isPlayer1: boolean;
+  readonly isPlayer2: boolean;
+  readonly isMyTurn: boolean;
+  readonly canJoin: boolean;
+  readonly playerRole: 'player1' | 'player2' | 'spectator';
 };
 
-// TODO: for some reason I needed to include "@midnight-ntwrk/wallet-sdk-address-format": "1.0.0-rc.1", should we bump in to rc-2 ?
+/**
+ * Player information for the game.
+ */
+export type PlayerInfo = {
+  readonly identity: Uint8Array;
+  readonly guessCount: bigint;
+  readonly isConnected: boolean;
+};
+
+/**
+ * Game result information.
+ */
+export type GameResult = {
+  readonly winner: 'player1' | 'player2' | 'draw' | null;
+  readonly isFinished: boolean;
+  readonly totalGuesses: {
+    player1: bigint;
+    player2: bigint;
+  };
+};
+
+// Re-export types from contract for convenience
+export type { Word, GuessResult, Maybe, Ledger };
+
+// Legacy types for compatibility (keeping the BBoardContract naming for now)
+export type BBoardContract = WordleContract;
+export type BBoardCircuitKeys = WordleCircuitKeys;
+export type BBoardProviders = WordleProviders;
+export type DeployedBBoardContract = DeployedWordleContract;
+export type BBoardDerivedState = WordleDerivedState;

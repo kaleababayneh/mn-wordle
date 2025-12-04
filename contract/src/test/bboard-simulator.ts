@@ -18,7 +18,6 @@ import {
   QueryContext,
   sampleContractAddress,
   constructorContext,
-  convert_bigint_to_Uint8Array,
 } from "@midnight-ntwrk/compact-runtime";
 import {
   Contract,
@@ -82,22 +81,5 @@ export class BBoardSimulator {
     return ledger(this.circuitContext.transactionContext.state);
   }
 
-  public takeDown(): Ledger {
-    this.circuitContext = this.contract.impureCircuits.takeDown(
-      this.circuitContext,
-    ).context;
-    return ledger(this.circuitContext.transactionContext.state);
-  }
-
-  public publicKey(): Uint8Array {
-    const sequence = convert_bigint_to_Uint8Array(
-      32,
-      this.getLedger().sequence,
-    );
-    return this.contract.circuits.publicKey(
-      this.circuitContext,
-      this.getPrivateState().secretKey,
-      sequence,
-    ).result;
-  }
+  
 }

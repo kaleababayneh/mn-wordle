@@ -1,6 +1,7 @@
 pragma language_version >= 0.16 && <= 0.18;
 
 import CompactStandardLibrary;
+export { Maybe }
 
 export struct Word {
   first_letter : Uint<8>;
@@ -18,86 +19,257 @@ export struct GuessResult {
   fifth_letter_result : Uint<2>;
 }
 
-enum State { 
-  NOT_STARTED,
-  STARTED,
-  ENDED 
+enum GAME_STATE { 
+  waiting_p1,
+  waiting_p2, 
+  p1_turn,
+  p2_turn,
+  p1_wins,
+  p2_wins,
+  draw
 }
 
-export ledger GameState: State;
-export ledger player_one:  ZswapCoinPublicKey;
-export ledger player_two:  ZswapCoinPublicKey;
+// Game state management
+export ledger game_state: GAME_STATE;
+export ledger current_guess: Word;                    // Current guess being made
+export ledger last_guess_result: Maybe<GuessResult>; // Result of last guess
 
-export ledger player_one_word_hash: Bytes<32>;
-export ledger player_two_word_hash: Bytes<32>;
+// Player 1 state
+export ledger p1: Maybe<Bytes<32>>;                     // Player 1 identity hash
+export ledger p1_public_key: Maybe<ZswapCoinPublicKey>; // Player 1 public key
+export ledger p1_word_hash: Bytes<32>;                  // Player 1 word commitment
+export ledger p1_guess_count: Counter;       // Number of guesses made
 
-export ledger whose_turn: Uint<1>; // 0 for player one, 1 for player two
-export ledger last_result: GuessResult;
+// Player 2 state  
+export ledger p2: Maybe<Bytes<32>>;                     // Player 2 identity hash
+export ledger p2_public_key: Maybe<ZswapCoinPublicKey>; // Player 2 public key
+export ledger p2_word_hash: Bytes<32>;                  // Player 2 word commitment
+export ledger p2_guess_count: Counter;                 // Number of guesses made
 
+// Private witness functions
+witness local_secret_key(): Bytes<32>;                  // Player's secret key for identity
+witness player_word(): Vector<5, Uint<8>>;              // Player's secret word
+witness player_salt(): Bytes<32>;                       // Player's salt for commitment
 
-witness localSecretKey(): Vector<5, Uint<8>>;
-witness localSalt(): Bytes<32>;
-
+// Helper function to generate player identity from secret key
+export pure circuit public_key(sk: Bytes<32>): Bytes<32> {
+  return persistentHash<Vector<2, Bytes<32>>>([pad(32, "wordle:pk:"), sk]);
+}
 
 constructor() {
-  player_one = ownPublicKey();
-  player_two = ownPublicKey();
-  const localSecretKey_hashed = persistentHash<Vector<5, Uint<8>>>(disclose(localSecretKey()));
-  player_one_word_hash = persistentHash<Vector<3, Bytes<32>>>([pad(32, "bboard:word:"), localSecretKey_hashed, disclose(localSalt())]);
-  GameState = State.NOT_STARTED;
-  whose_turn = 0;
+  game_state = GAME_STATE.waiting_p1;
+  p1_guess_count.resetToDefault();
+  p2_guess_count.resetToDefault();
+}
+// Player 1 joins the game
+export circuit join_p1(): [] {
+  assert (game_state == GAME_STATE.waiting_p1, "Game is not waiting for player 1");
+  assert (!p1.is_some, "Player 1 already joined");
+  
+  const sk = local_secret_key();
+  // Generate unique secret key for this game instance
+  const secret_key = persistentHash<Vector<2, Bytes<32>>>([sk, kernel.self().bytes]);
+  const me = public_key(sk);
+  
+  p1 = disclose(some<Bytes<32>>(me));
+  p1_public_key = some<ZswapCoinPublicKey>(ownPublicKey());
+  
+  // Commit to word using hash(word + salt + secret_key)
+  const word = player_word();
+  const salt = player_salt();
+  p1_word_hash = disclose(persistentHash<Vector<3, Bytes<32>>>([
+    persistentHash<Vector<5, Uint<8>>>(word),
+    salt,
+    secret_key
+  ]));
+  
+  game_state = GAME_STATE.waiting_p2;
 }
 
-export circuit joinGame(opponent: ZswapCoinPublicKey, opponent_word_hash: Bytes<32> ) : [] {
-  assert(GameState == State.NOT_STARTED, "Game already started");
-  assert(player_one == player_two, "Game already has two players");
-  player_two = ownPublicKey();
-  const localSecretKey_hashed = persistentHash<Vector<5, Uint<8>>>(disclose(localSecretKey()));
-  player_two_word_hash = persistentHash<Vector<3, Bytes<32>>>([pad(32, "bboard:word:"), localSecretKey_hashed, disclose(localSalt())]);
-  assert(player_one != player_two, "Player cannot play against themselves");
-  GameState = State.STARTED;
+// Player 2 joins the game  
+export circuit join_p2(): [] {
+  assert (game_state == GAME_STATE.waiting_p2, "Game is not waiting for player 2");
+  assert (!p2.is_some, "Player 2 already joined");
+  
+  const sk = local_secret_key();
+  const secret_key = persistentHash<Vector<2, Bytes<32>>>([sk, kernel.self().bytes]);
+  const me = public_key(sk);
+  
+  // Ensure different players
+  assert (p1.value != me, "Cannot play against yourself");
+  
+  p2 = disclose(some<Bytes<32>>(me));
+  p2_public_key = some<ZswapCoinPublicKey>(ownPublicKey());
+  
+  const word = player_word();
+  const salt = player_salt();
+  p2_word_hash = disclose(persistentHash<Vector<3, Bytes<32>>>([
+    persistentHash<Vector<5, Uint<8>>>(word),
+    salt,
+    secret_key
+  ]));
+  
+  game_state = GAME_STATE.p1_turn;
 }
 
-export circuit guess( word: Word, attempt: Word, player: ZswapCoinPublicKey ): GuessResult {
-  assert(GameState == State.STARTED, "Game is not started");
-  if (whose_turn == 0) {
-    assert(player == player_one, "Not your turn");
-  } else {
-    assert(player == player_two, "Not your turn");
-  }
-  // return 0 if the letter doesnt exist in the word
-  // return 1 if the letter exists in the word but is in the wrong position
-  // return 2 if the letter is in the correct position
-  const the_game_result = GuessResult {
-    first_letter_result: evaluateLetter(word.first_letter, attempt, 0),
-    second_letter_result: evaluateLetter(word.second_letter, attempt, 1),
-    third_letter_result: evaluateLetter(word.third_letter, attempt, 2),
-    fourth_letter_result: evaluateLetter(word.fourth_letter, attempt, 3),
-    fifth_letter_result: evaluateLetter(word.fifth_letter, attempt, 4),
+// Player 1's turn to guess Player 2's word
+export circuit turn_player1(guess: Word): [] {
+  assert (game_state == GAME_STATE.p1_turn, "Not player 1's turn");
+  assert (p1_guess_count < 6, "Player 1 has used all guesses");
+  
+  const sk = local_secret_key();
+  const me = public_key(sk);
+  assert (p1.value == me, "You are not player 1");
+  
+  current_guess = disclose(guess);
+  
+  // Player 2 will verify this guess against their word in next circuit call
+  game_state = GAME_STATE.p2_turn;
+  p1_guess_count.increment(1);
+}
+
+// Player 2's turn to guess Player 1's word OR verify Player 1's guess
+export circuit turn_player2(guess: Word): [] {
+  assert (game_state == GAME_STATE.p2_turn, "Not player 2's turn");
+  
+  const sk = local_secret_key();
+  const secret_key = persistentHash<Vector<2, Bytes<32>>>([sk, kernel.self().bytes]);
+  const me = public_key(sk);
+  assert (p2.value == me, "You are not player 2");
+  
+  // First, verify Player 1's guess against Player 2's word
+  const my_word = player_word();
+  const my_salt = player_salt();
+  
+  // Verify word commitment hasn't changed
+  const word_hash = persistentHash<Vector<3, Bytes<32>>>([
+    persistentHash<Vector<5, Uint<8>>>(my_word),
+    my_salt, 
+    secret_key
+  ]);
+  assert (word_hash == p2_word_hash, "Word commitment mismatch");
+  
+  // Convert word to struct for evaluation
+  const word_struct = Word {
+    first_letter: disclose(my_word[0] as Uint<8>),
+    second_letter: disclose(my_word[1] as Uint<8>), 
+    third_letter: disclose(my_word[2] as Uint<8>),
+    fourth_letter: disclose(my_word[3] as Uint<8>),
+    fifth_letter: disclose(my_word[4] as Uint<8>)
   };
-
-  if (the_game_result.first_letter_result == 2 &&
-      the_game_result.second_letter_result == 2 &&
-      the_game_result.third_letter_result == 2 &&
-      the_game_result.fourth_letter_result == 2 &&
-      the_game_result.fifth_letter_result == 2) {
-    GameState = State.ENDED;
+  
+  // Evaluate Player 1's guess
+  const result = disclose(evaluate_guess(word_struct, current_guess));
+  last_guess_result = disclose(some<GuessResult>(result));
+  
+  // Check if Player 1 won
+  if (disclose(result.first_letter_result) == 2 && disclose(result.second_letter_result) == 2 && 
+      disclose(result.third_letter_result) == 2 && disclose(result.fourth_letter_result) == 2 && 
+      disclose(result.fifth_letter_result) == 2) {
+    game_state = GAME_STATE.p1_wins;
+    return;
   }
-  whose_turn = 1 - whose_turn; // switch turn
-  return the_game_result;
+  
+  // Now Player 2 makes their guess
+  assert (p2_guess_count < 6, "Player 2 has used all guesses");
+  current_guess = disclose(guess);
+  p2_guess_count.increment(1);
+  
+  // Check if both players used all guesses (after incrementing)
+  if (p1_guess_count >= 6 && p2_guess_count >= 6) {
+    game_state = GAME_STATE.draw;
+    return;
+  }
+  
+  // Check if Player 1 used all guesses but Player 2 hasn't
+  if (p1_guess_count >= 6) {
+    game_state = GAME_STATE.p2_wins;
+    return;
+  }
+  
+  game_state = GAME_STATE.p1_turn;
 }
 
-export circuit evaluateLetter( letter: Uint<8>, attempt: Word, position: Uint<3> ): Uint<2> {
-  if (letter == getLetterAtPosition(attempt, position)) {
-    return 2;
-  } else if (letter == attempt.first_letter || letter == attempt.second_letter || letter == attempt.third_letter || letter == attempt.fourth_letter || letter == attempt.fifth_letter) {
-    return 1;
+// Verify Player 2's guess (called by Player 1)
+export circuit verify_guess(): [] {
+  assert (game_state == GAME_STATE.p1_turn, "Not player 1's turn to verify");
+  
+  const sk = local_secret_key();
+  const secret_key = persistentHash<Vector<2, Bytes<32>>>([sk, kernel.self().bytes]);
+  const me = public_key(sk);
+  assert (p1.value == me, "You are not player 1");
+  
+  // Verify Player 2's guess against Player 1's word
+  const my_word = player_word();
+  const my_salt = player_salt();
+  
+  // Verify word commitment
+  const word_hash = persistentHash<Vector<3, Bytes<32>>>([
+    persistentHash<Vector<5, Uint<8>>>(my_word),
+    my_salt,
+    secret_key  
+  ]);
+  assert (word_hash == p1_word_hash, "Word commitment mismatch");
+  
+  const word_struct = Word {
+    first_letter: disclose(my_word[0] as Uint<8>),
+    second_letter: disclose(my_word[1] as Uint<8>),
+    third_letter: disclose(my_word[2] as Uint<8>), 
+    fourth_letter: disclose(my_word[3] as Uint<8>),
+    fifth_letter: disclose(my_word[4] as Uint<8>)
+  };
+  
+  const result = disclose(evaluate_guess(word_struct, current_guess));
+  last_guess_result = disclose(some<GuessResult>(result));
+  
+  // Check if Player 2 won
+  if (disclose(result.first_letter_result) == 2 && disclose(result.second_letter_result) == 2 &&
+      disclose(result.third_letter_result) == 2 && disclose(result.fourth_letter_result) == 2 && 
+      disclose(result.fifth_letter_result) == 2) {
+    game_state = GAME_STATE.p2_wins;
+    return;
+  }
+  
+  // Check game end conditions
+  if (p2_guess_count >= 6) {
+    if (p1_guess_count >= 6) {
+      game_state = GAME_STATE.draw;
+    } else {
+      game_state = GAME_STATE.p1_wins;
+    }
+    return;
+  }
+  
+  game_state = GAME_STATE.p1_turn;
+}
+
+// Pure function to evaluate a guess against a word
+pure circuit evaluate_guess(word: Word, guess: Word): GuessResult {
+  return GuessResult {
+    first_letter_result: evaluate_letter(word, guess, 0),
+    second_letter_result: evaluate_letter(word, guess, 1), 
+    third_letter_result: evaluate_letter(word, guess, 2),
+    fourth_letter_result: evaluate_letter(word, guess, 3),
+    fifth_letter_result: evaluate_letter(word, guess, 4)
+  };
+}
+
+pure circuit evaluate_letter(word: Word, guess: Word, position: Uint<3>): Uint<2> {
+  const guess_letter = get_letter_at_position(guess, position);
+  const word_letter = get_letter_at_position(word, position);
+  
+  if (guess_letter == word_letter) {
+    return 2; // Correct position (green)
+  } else if (guess_letter == word.first_letter || guess_letter == word.second_letter || 
+             guess_letter == word.third_letter || guess_letter == word.fourth_letter || 
+             guess_letter == word.fifth_letter) {
+    return 1; // Wrong position but in word (yellow)
   } else {
-    return 0;
+    return 0; // Not in word (gray)
   }
 }
 
-export circuit getLetterAtPosition( word: Word, position: Uint<3> ): Uint<8> {
+pure circuit get_letter_at_position(word: Word, position: Uint<3>): Uint<8> {
   if (position == 0) {
     return word.first_letter;
   } else if (position == 1) {
@@ -110,4 +282,3 @@ export circuit getLetterAtPosition( word: Word, position: Uint<3> ): Uint<8> {
     return word.fifth_letter;
   }
 }
-
