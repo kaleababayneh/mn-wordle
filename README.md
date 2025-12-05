@@ -8,7 +8,7 @@
 
 **Why Zero Knowledge?**
 
-**Zero-knowledge (ZK) is one of the most fascinating cryptographic techniques to date. It has gained significant attention for solving both ****scalability** and **privacy** challenges in Ethereum. While most current use cases focus on scalability, only a small fraction leverage ZK for privacy — and even then, primarily for **financial transactions** . However, zero-knowledge has far broader potential applications, many of which remain unexplored beyond on-chain finance.
+**Zero-knowledge (ZK) is one of the most fascinating cryptographic techniques to date. It has gained significant attention for solving both ****scalability** and **privacy** challenges in blockchain. While most current use cases focus on scalability, only a small fraction leverage ZK for privacy — and even then, primarily for **financial transactions** . However, zero-knowledge has far broader potential applications, many of which remain unexplored beyond on-chain finance.
 
 **ZK in Gaming**
 
