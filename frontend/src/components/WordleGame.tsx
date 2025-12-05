@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   Card,
   CardContent,
@@ -13,6 +13,7 @@ import {
   Stepper,
   Step,
   StepLabel,
+  Paper,
 } from '@mui/material';
 import { GameState, type WordleDerivedState, type DeployedWordleAPI } from '../../../api/src/index';
 
@@ -22,58 +23,134 @@ interface WordleGameProps {
   isLoading?: boolean;
 }
 
-interface GuessResultDisplayProps {
-  guess: string;
-  result: { first_letter_result: bigint; second_letter_result: bigint; third_letter_result: bigint; fourth_letter_result: bigint; fifth_letter_result: bigint; } | null;
+interface WordleBoardProps {
+  guesses: Array<{word: string, result?: Array<number>}>;
+  currentWord: string;
+  isActive: boolean;
+  playerName: string;
+  maxGuesses?: number;
 }
 
-const GuessResultDisplay: React.FC<GuessResultDisplayProps> = ({ guess, result }) => {
-  const getLetterColor = (letterResult: bigint): string => {
-    const numResult = Number(letterResult);
-    console.log('Letter result:', letterResult, 'Number:', numResult);
-    
-    switch (numResult) {
-      case 2: return '#4caf50'; // Green - correct position
-      case 1: return '#ff9800'; // Orange - wrong position but in word
-      default: return '#9e9e9e'; // Gray - not in word
+interface LetterTileProps {
+  letter: string;
+  status: 'empty' | 'filled' | 'correct' | 'present' | 'absent';
+  isActive?: boolean;
+}
+
+const LetterTile: React.FC<LetterTileProps> = ({ letter, status, isActive = false }) => {
+  const getBackgroundColor = (): string => {
+    switch (status) {
+      case 'correct': return '#4caf50'; // Green
+      case 'present': return '#ff9800'; // Orange
+      case 'absent': return '#757575'; // Gray
+      case 'filled': return isActive ? '#333333' : '#424242'; // Dark gray for typed letters
+      case 'empty': return isActive ? '#1e1e1e' : '#2e2e2e';
+      default: return '#2e2e2e';
     }
   };
 
-  if (!result) return null;
-
-  const letters = guess.split('');
-  const results = [
-    result.first_letter_result,
-    result.second_letter_result,
-    result.third_letter_result,
-    result.fourth_letter_result,
-    result.fifth_letter_result,
-  ];
-
-  console.log('Guess:', guess, 'Results:', results.map(r => Number(r)));
+  const getBorderColor = (): string => {
+    if (isActive && (status === 'filled' || status === 'empty')) return '#666666';
+    return 'transparent';
+  };
 
   return (
-    <Box display="flex" gap={1} justifyContent="center" my={1}>
-      {letters.map((letter, index) => (
-        <Box
-          key={index}
-          sx={{
-            width: 50,
-            height: 50,
-            backgroundColor: getLetterColor(results[index]),
-            color: 'white',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontWeight: 'bold',
-            fontSize: '1.2rem',
-            borderRadius: 1,
-          }}
-        >
-          {letter.toUpperCase()}
-        </Box>
-      ))}
+    <Box
+      sx={{
+        width: 50,
+        height: 50,
+        backgroundColor: getBackgroundColor(),
+        border: `2px solid ${getBorderColor()}`,
+        color: 'white',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontWeight: 'bold',
+        fontSize: '1.5rem',
+        borderRadius: 1,
+        transition: 'all 0.2s ease-in-out',
+        fontFamily: 'monospace',
+      }}
+    >
+      {letter.toUpperCase()}
     </Box>
+  );
+};
+
+const WordleBoard: React.FC<WordleBoardProps> = ({ 
+  guesses, 
+  currentWord, 
+  isActive, 
+  playerName,
+  maxGuesses = 6 
+}) => {
+  const renderRow = (rowIndex: number) => {
+    const guess = guesses[rowIndex];
+    const isCurrentRow = rowIndex === guesses.length && isActive;
+    const word = isCurrentRow ? currentWord : (guess?.word || '');
+    const result = guess?.result;
+
+    const letters = word.padEnd(5, ' ').split('').slice(0, 5);
+
+    return (
+      <Box key={rowIndex} sx={{ display: 'flex', gap: 1, justifyContent: 'center', mb: 1 }}>
+        {letters.map((letter, letterIndex) => {
+          let status: 'empty' | 'filled' | 'correct' | 'present' | 'absent' = 'empty';
+          
+          if (letter !== ' ') {
+            if (result) {
+              // This row has been submitted and has results
+              switch (result[letterIndex]) {
+                case 2: status = 'correct'; break;
+                case 1: status = 'present'; break;
+                case 0: status = 'absent'; break;
+                default: status = 'filled';
+              }
+            } else {
+              // This row is being typed or completed but not submitted
+              status = 'filled';
+            }
+          }
+
+          return (
+            <LetterTile
+              key={letterIndex}
+              letter={letter}
+              status={status}
+              isActive={isCurrentRow}
+            />
+          );
+        })}
+      </Box>
+    );
+  };
+
+  return (
+    <Paper
+      elevation={isActive ? 6 : 2}
+      sx={{
+        p: 3,
+        backgroundColor: isActive ? '#1a1a1a' : '#2a2a2a',
+        border: isActive ? '2px solid #4caf50' : '2px solid transparent',
+        transition: 'all 0.3s ease-in-out',
+      }}
+    >
+      <Typography
+        variant="h6"
+        align="center"
+        sx={{
+          mb: 2,
+          color: isActive ? '#4caf50' : '#ffffff',
+          fontWeight: isActive ? 'bold' : 'normal',
+        }}
+      >
+        {playerName} {isActive && '(Your Turn)'}
+      </Typography>
+      
+      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        {Array.from({ length: maxGuesses }, (_, i) => renderRow(i))}
+      </Box>
+    </Paper>
   );
 };
 
@@ -82,6 +159,77 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
   const [playerWord, setPlayerWord] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [p1Guesses, setP1Guesses] = useState<Array<{word: string, result?: Array<number>}>>([]);
+  const [p2Guesses, setP2Guesses] = useState<Array<{word: string, result?: Array<number>}>>([]);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const canJoinAsPlayer1 = state?.gameState === GameState.WAITING_P1;
+  const canJoinAsPlayer2 = state?.gameState === GameState.WAITING_P2;
+  const canMakeGuess = state?.isMyTurn && (state?.gameState === GameState.P1_GUESS_TURN || state?.gameState === GameState.P2_GUESS_TURN);
+  const canVerifyGuess = state?.isMyTurn && (state?.gameState === GameState.P1_VERIFY_TURN || state?.gameState === GameState.P2_VERIFY_TURN);
+  const isGameComplete = state?.gameState === GameState.P1_WINS || state?.gameState === GameState.P2_WINS || state?.gameState === GameState.DRAW;
+
+  // Update guess history when state changes
+  useEffect(() => {
+    if (state?.lastGuessResult && state?.currentGuess && api) {
+      const guessWord = api.wordToString(state.currentGuess);
+      const result = [
+        Number(state.lastGuessResult.first_letter_result),
+        Number(state.lastGuessResult.second_letter_result),
+        Number(state.lastGuessResult.third_letter_result),
+        Number(state.lastGuessResult.fourth_letter_result),
+        Number(state.lastGuessResult.fifth_letter_result),
+      ];
+
+      // Determine which player made this guess based on game state and whose turn it was
+      if (state.gameState === GameState.P2_VERIFY_TURN || state.gameState === GameState.P2_GUESS_TURN) {
+        // Player 1 just made a guess
+        setP1Guesses(prev => {
+          const existing = prev.find(g => g.word === guessWord);
+          if (!existing) {
+            return [...prev, { word: guessWord, result }];
+          }
+          return prev.map(g => g.word === guessWord ? { ...g, result } : g);
+        });
+      } else if (state.gameState === GameState.P1_VERIFY_TURN || state.gameState === GameState.P1_GUESS_TURN) {
+        // Player 2 just made a guess
+        setP2Guesses(prev => {
+          const existing = prev.find(g => g.word === guessWord);
+          if (!existing) {
+            return [...prev, { word: guessWord, result }];
+          }
+          return prev.map(g => g.word === guessWord ? { ...g, result } : g);
+        });
+      }
+    }
+  }, [state?.lastGuessResult, state?.currentGuess, state?.gameState, api]);
+
+  // Handle keyboard input
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      if (!canMakeGuess) return;
+
+      if (e.key === 'Backspace') {
+        setCurrentGuess(prev => prev.slice(0, -1));
+      } else if (e.key === 'Enter') {
+        if (currentGuess.length === 5) {
+          handleMakeGuess();
+        }
+      } else if (/^[a-zA-Z]$/.test(e.key) && currentGuess.length < 5) {
+        setCurrentGuess(prev => prev + e.key.toUpperCase());
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyPress);
+    return () => document.removeEventListener('keydown', handleKeyPress);
+  }, [currentGuess, canMakeGuess]);
+
+  // Focus input when it becomes the player's turn
+  useEffect(() => {
+    if (canMakeGuess && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [canMakeGuess]);
 
   const getGameStateLabel = (gameState: GameState): string => {
     switch (gameState) {
@@ -130,6 +278,12 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
     }
   };
 
+  // const canJoinAsPlayer1 = state?.gameState === GameState.WAITING_P1;
+  // const canJoinAsPlayer2 = state?.gameState === GameState.WAITING_P2;
+  // const canMakeGuess = state?.isMyTurn && (state?.gameState === GameState.P1_GUESS_TURN || state?.gameState === GameState.P2_GUESS_TURN);
+  // const canVerifyGuess = state?.isMyTurn && (state?.gameState === GameState.P1_VERIFY_TURN || state?.gameState === GameState.P2_VERIFY_TURN);
+  // const isGameComplete = state?.gameState === GameState.P1_WINS || state?.gameState === GameState.P2_WINS || state?.gameState === GameState.DRAW;
+
   const handleJoinGame = async (asPlayer1: boolean) => {
     if (!api || !playerWord || playerWord.length !== 5) {
       setError('Please enter a 5-letter word');
@@ -174,9 +328,22 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
     setError(null);
 
     try {
+      // Add the current guess to the appropriate player's guess list immediately for UI feedback
+      if (state?.isPlayer1) {
+        setP1Guesses(prev => [...prev, { word: currentGuess }]);
+      } else if (state?.isPlayer2) {
+        setP2Guesses(prev => [...prev, { word: currentGuess }]);
+      }
+      
       await api.makeGuess(currentGuess.toLowerCase());
       setCurrentGuess('');
     } catch (err) {
+      // If there was an error, remove the guess we just added
+      if (state?.isPlayer1) {
+        setP1Guesses(prev => prev.slice(0, -1));
+      } else if (state?.isPlayer2) {
+        setP2Guesses(prev => prev.slice(0, -1));
+      }
       setError(err instanceof Error ? err.message : 'Failed to make guess');
     } finally {
       setIsSubmitting(false);
@@ -202,12 +369,6 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
     }
   };
 
-  const canJoinAsPlayer1 = state?.gameState === GameState.WAITING_P1;
-  const canJoinAsPlayer2 = state?.gameState === GameState.WAITING_P2;
-  const canMakeGuess = state?.isMyTurn && (state?.gameState === GameState.P1_GUESS_TURN || state?.gameState === GameState.P2_GUESS_TURN);
-  const canVerifyGuess = state?.isMyTurn && (state?.gameState === GameState.P1_VERIFY_TURN || state?.gameState === GameState.P2_VERIFY_TURN);
-  const isGameComplete = state?.gameState === GameState.P1_WINS || state?.gameState === GameState.P2_WINS || state?.gameState === GameState.DRAW;
-
   if (isLoading) {
     return (
       <Card sx={{ maxWidth: 600, margin: 'auto', mt: 4 }}>
@@ -219,196 +380,194 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
     );
   }
 
+  const showGameBoards = state && state.gameState !== GameState.WAITING_P1 && state.gameState !== GameState.WAITING_P2;
+
   return (
-    <Card sx={{ maxWidth: 600, margin: 'auto', mt: 4 }}>
-      <CardHeader
-        title="P2P ZK Wordle"
-        subheader={
-          <Box>
-            <Typography variant="body2">
-              {state ? getGameStateLabel(state.gameState) : 'Connecting...'}
-            </Typography>
-            {api?.deployedContractAddress && (
-              <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 1 }}>
-                Contract: {api.deployedContractAddress.toString()}
+    <Box sx={{ maxWidth: 1200, margin: 'auto', mt: 4 }}>
+      {/* Header Card */}
+      <Card sx={{ mb: 3 }}>
+        <CardHeader
+          title="P2P ZK Wordle"
+          subheader={
+            <Box>
+              <Typography variant="body2">
+                {state ? getGameStateLabel(state.gameState) : 'Connecting...'}
               </Typography>
-            )}
+              {api?.deployedContractAddress && (
+                <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 1 }}>
+                  Contract: {api.deployedContractAddress.toString()}
+                </Typography>
+              )}
+            </Box>
+          }
+          action={
+            <Box>
+              {state && (
+                <Chip
+                  label={`${state.playerRole === 'spectator' ? 'Spectator' : state.playerRole.charAt(0).toUpperCase() + state.playerRole.slice(1)}`}
+                  color={state.playerRole === 'spectator' ? 'default' : 'primary'}
+                  variant="outlined"
+                />
+              )}
+            </Box>
+          }
+        />
+
+        <CardContent>
+          {/* Progress Stepper */}
+          <Box sx={{ mb: 3 }}>
+            <Stepper activeStep={getActiveStep()} alternativeLabel>
+              {getStepperSteps().map((label) => (
+                <Step key={label}>
+                  <StepLabel>{label}</StepLabel>
+                </Step>
+              ))}
+            </Stepper>
           </Box>
-        }
-        action={
-          <Box>
-            {state && (
-              <Chip
-                label={`${state.playerRole === 'spectator' ? 'Spectator' : state.playerRole.charAt(0).toUpperCase() + state.playerRole.slice(1)}`}
-                color={state.playerRole === 'spectator' ? 'default' : 'primary'}
-                variant="outlined"
+
+          {error && (
+            <Alert severity="error" sx={{ mb: 3 }}>
+              {error}
+            </Alert>
+          )}
+
+          {/* Join Game Section */}
+          {(canJoinAsPlayer1 || canJoinAsPlayer2) && (
+            <Box sx={{ mb: 3, textAlign: 'center' }}>
+              <Typography variant="h6" gutterBottom>
+                Join Game
+              </Typography>
+              <TextField
+                label="Your secret word (5 letters)"
+                value={playerWord}
+                onChange={(e) => setPlayerWord(e.target.value.toUpperCase().slice(0, 5))}
+                sx={{ mb: 2, width: 300 }}
+                inputProps={{ maxLength: 5, style: { textAlign: 'center', fontSize: '1.2rem' } }}
               />
-            )}
-          </Box>
-        }
-      />
+              <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
+                {canJoinAsPlayer1 && (
+                  <Button
+                    variant="contained"
+                    onClick={() => handleJoinGame(true)}
+                    disabled={isSubmitting || playerWord.length !== 5}
+                    size="large"
+                  >
+                    Join as Player 1
+                  </Button>
+                )}
+                {canJoinAsPlayer2 && (
+                  <Button
+                    variant="contained"
+                    onClick={() => handleJoinGame(false)}
+                    disabled={isSubmitting || playerWord.length !== 5}
+                    size="large"
+                  >
+                    Join as Player 2
+                  </Button>
+                )}
+              </Box>
+            </Box>
+          )}
 
-      <CardContent>
-        {/* Progress Stepper */}
-        <Box sx={{ mb: 4 }}>
-          <Stepper activeStep={getActiveStep()} alternativeLabel>
-            {getStepperSteps().map((label) => (
-              <Step key={label}>
-                <StepLabel>{label}</StepLabel>
-              </Step>
-            ))}
-          </Stepper>
+          {/* Game Complete */}
+          {isGameComplete && (
+            <Box sx={{ textAlign: 'center', py: 2 }}>
+              <Typography variant="h4" gutterBottom>
+                {getGameStateLabel(state.gameState)}
+              </Typography>
+              {state.gameState !== GameState.DRAW && (
+                <Typography variant="h6">
+                  Game completed in {state.gameState === GameState.P1_WINS ? state.p1GuessCount : state.p2GuessCount} guesses!
+                </Typography>
+              )}
+            </Box>
+          )}
+
+          {isSubmitting && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
+              <CircularProgress size={24} />
+            </Box>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Game Boards */}
+      {showGameBoards && (
+        <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', justifyContent: 'center' }}>
+          <WordleBoard
+            guesses={p1Guesses}
+            currentWord={state?.isPlayer1 ? currentGuess : ''}
+            isActive={!!(state?.isPlayer1 && canMakeGuess)}
+            playerName={state?.isPlayer1 ? 'You (Player 1)' : 'Player 1'}
+          />
+          <WordleBoard
+            guesses={p2Guesses}
+            currentWord={state?.isPlayer2 ? currentGuess : ''}
+            isActive={!!(state?.isPlayer2 && canMakeGuess)}
+            playerName={state?.isPlayer2 ? 'You (Player 2)' : 'Player 2'}
+          />
         </Box>
+      )}
 
-        {error && (
-          <Alert severity="error" sx={{ mb: 3 }}>
-            {error}
-          </Alert>
-        )}
-
-        {/* Game Status */}
-        {state && (
-          <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
-            <Box sx={{ flex: 1 }}>
-              <Typography variant="body2" color="textSecondary">
-                Player 1 Guesses: {state.p1GuessCount.toString()}
-              </Typography>
-              {state.p1 && (
-                <Typography variant="body2" color="textSecondary">
-                  Player 1: {state.isPlayer1 ? 'You' : 'Opponent'}
+      {/* Game Actions */}
+      {(canMakeGuess || canVerifyGuess) && (
+        <Card sx={{ mt: 3 }}>
+          <CardContent sx={{ textAlign: 'center' }}>
+            {canMakeGuess && (
+              <Box>
+                <Typography variant="h6" gutterBottom>
+                  Type your guess and press Enter, or use the button below
                 </Typography>
-              )}
-            </Box>
-            <Box sx={{ flex: 1 }}>
-              <Typography variant="body2" color="textSecondary">
-                Player 2 Guesses: {state.p2GuessCount.toString()}
-              </Typography>
-              {state.p2 && (
-                <Typography variant="body2" color="textSecondary">
-                  Player 2: {state.isPlayer2 ? 'You' : 'Opponent'}
-                </Typography>
-              )}
-            </Box>
-          </Box>
-        )}
-
-        {/* Join Game Section */}
-        {(canJoinAsPlayer1 || canJoinAsPlayer2) && (
-          <Box sx={{ mb: 3 }}>
-            <Typography variant="h6" gutterBottom>
-              Join Game
-            </Typography>
-            <TextField
-              fullWidth
-              label="Your secret word (5 letters)"
-              value={playerWord}
-              onChange={(e) => setPlayerWord(e.target.value.toUpperCase().slice(0, 5))}
-              sx={{ mb: 2 }}
-              inputProps={{ maxLength: 5 }}
-            />
-            <Box sx={{ display: 'flex', gap: 2 }}>
-              {canJoinAsPlayer1 && (
+                <TextField
+                  inputRef={inputRef}
+                  label="Your guess (5 letters)"
+                  value={currentGuess}
+                  onChange={(e) => setCurrentGuess(e.target.value.toUpperCase().slice(0, 5))}
+                  sx={{ mb: 2, width: 300 }}
+                  inputProps={{ 
+                    maxLength: 5, 
+                    style: { textAlign: 'center', fontSize: '1.5rem', letterSpacing: '0.2em' } 
+                  }}
+                  autoFocus
+                />
+                <br />
                 <Button
                   variant="contained"
-                  onClick={() => handleJoinGame(true)}
-                  disabled={isSubmitting || playerWord.length !== 5}
+                  onClick={handleMakeGuess}
+                  disabled={isSubmitting || currentGuess.length !== 5}
+                  size="large"
                 >
-                  Join as Player 1
+                  Submit Guess
                 </Button>
-              )}
-              {canJoinAsPlayer2 && (
-                <Button
-                  variant="contained"
-                  onClick={() => handleJoinGame(false)}
-                  disabled={isSubmitting || playerWord.length !== 5}
-                >
-                  Join as Player 2
-                </Button>
-              )}
-            </Box>
-          </Box>
-        )}
-
-        {/* Game Actions */}
-        {canMakeGuess && (
-          <Box sx={{ mb: 3 }}>
-            <Typography variant="h6" gutterBottom>
-              Make Your Guess
-            </Typography>
-            <TextField
-              fullWidth
-              label="Your guess (5 letters)"
-              value={currentGuess}
-              onChange={(e) => setCurrentGuess(e.target.value.toUpperCase().slice(0, 5))}
-              sx={{ mb: 2 }}
-              inputProps={{ maxLength: 5 }}
-            />
-            <Button
-              variant="contained"
-              onClick={handleMakeGuess}
-              disabled={isSubmitting || currentGuess.length !== 5}
-            >
-              Submit Guess
-            </Button>
-          </Box>
-        )}
-
-        {canVerifyGuess && (
-          <Box sx={{ mb: 3 }}>
-            <Typography variant="h6" gutterBottom>
-              Verify Opponent's Guess
-            </Typography>
-            {state?.currentGuess && (
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="body1">
-                  Opponent's guess: <strong>{api?.wordToString(state.currentGuess).toUpperCase()}</strong>
-                </Typography>
               </Box>
             )}
-            <Button
-              variant="contained"
-              onClick={handleVerifyGuess}
-              disabled={isSubmitting}
-            >
-              Verify Guess
-            </Button>
-          </Box>
-        )}
 
-        {/* Last Guess Result */}
-        {state?.lastGuessResult && state?.currentGuess && (
-          <Box sx={{ mb: 3 }}>
-            <Typography variant="h6" gutterBottom>
-              Last Guess Result
-            </Typography>
-            <GuessResultDisplay 
-              guess={api?.wordToString(state.currentGuess) || ''} 
-              result={state.lastGuessResult} 
-            />
-          </Box>
-        )}
-
-        {/* Game Complete */}
-        {isGameComplete && (
-          <Box sx={{ textAlign: 'center', py: 2 }}>
-            <Typography variant="h4" gutterBottom>
-              {getGameStateLabel(state.gameState)}
-            </Typography>
-            {state.gameState !== GameState.DRAW && (
-              <Typography variant="h6">
-                Game completed in {state.gameState === GameState.P1_WINS ? state.p1GuessCount : state.p2GuessCount} guesses!
-              </Typography>
+            {canVerifyGuess && (
+              <Box>
+                <Typography variant="h6" gutterBottom>
+                  Verify Opponent's Guess
+                </Typography>
+                {state?.currentGuess && (
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="h4" sx={{ fontFamily: 'monospace', letterSpacing: '0.3em' }}>
+                      {api?.wordToString(state.currentGuess).toUpperCase()}
+                    </Typography>
+                  </Box>
+                )}
+                <Button
+                  variant="contained"
+                  onClick={handleVerifyGuess}
+                  disabled={isSubmitting}
+                  size="large"
+                >
+                  Verify Guess
+                </Button>
+              </Box>
             )}
-          </Box>
-        )}
-
-        {isSubmitting && (
-          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
-            <CircularProgress size={24} />
-          </Box>
-        )}
-      </CardContent>
-    </Card>
+          </CardContent>
+        </Card>
+      )}
+    </Box>
   );
 };
 
