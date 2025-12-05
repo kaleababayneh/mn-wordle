@@ -1,5 +1,5 @@
 {
-  "name": "@midnight-ntwrk/bboard-contract",
+  "name": "@midnight-ntwrk/wordle-contract",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -13,9 +13,9 @@
     }
   },
   "scripts": {
-    "build": "rm -rf dist && tsc --project tsconfig.build.json && cp -Rf ./src/managed ./dist/managed && cp ./src/bboard.compact ./dist",
+    "build": "rm -rf dist && tsc --project tsconfig.build.json && cp -Rf ./src/managed ./dist/managed && cp ./src/wordle.compact ./dist",
     "ci": "npm run compact && npm run typecheck && npm run lint && npm run build && npm run test",
-    "compact": "compact compile src/bboard.compact ./src/managed/bboard",
+    "compact": "compact compile src/wordle.compact ./src/managed/wordle",
     "lint": "eslint src",
     "prepack": "npm build",
     "test": "vitest",

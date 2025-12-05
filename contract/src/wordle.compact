@@ -128,6 +128,7 @@ export circuit turn_player1(guess: Word): [] {
   
   // Player 2 will verify this guess
   game_state = GAME_STATE.p2_verify_turn;
+  last_guess_result = disclose(none<GuessResult>());
 }
 
 // Player 2 verifies Player 1's guess
@@ -200,6 +201,7 @@ export circuit turn_player2(guess: Word): [] {
   
   // Player 1 will verify this guess
   game_state = GAME_STATE.p1_verify_turn;
+  last_guess_result = disclose(none<GuessResult>());
 }
 
 // Player 1 verifies Player 2's guess
