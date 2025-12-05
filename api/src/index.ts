@@ -144,20 +144,35 @@ export class WordleAPI implements DeployedWordleAPI {
    * @param word The 5-letter word to use for the game.
    */
   async joinAsPlayer1(word: string): Promise<void> {
-    this.logger?.info(`joinAsPlayer1: ${word}`);
+    this.logger?.info(`joinAsPlayer1: ${word} -> ${word.toUpperCase()}`);
 
-    // Update private state with the chosen word
-    const currentPrivateState = await this.providers.privateStateProvider.get(bboardPrivateStateKey);
-    if (!currentPrivateState) {
-      throw new Error("Private state not found. Make sure you've deployed or joined a contract first.");
-    }
-    const wordBytes = new Uint8Array([...word].map(c => c.charCodeAt(0)));
+    // Always get fresh private state to ensure it's valid
+    const currentPrivateState = await WordleAPI.getPrivateState(this.providers);
+    
+    this.logger?.info(`Current private state details: secretKey=${!!currentPrivateState.secretKey}, salt=${!!currentPrivateState.salt}, word=${!!currentPrivateState.word}`);
+
+    // Ensure consistent case handling - convert to uppercase
+    const normalizedWord = word.toUpperCase();
+    const wordBytes = new Uint8Array([...normalizedWord].map(c => c.charCodeAt(0)));
+    this.logger?.info(`Word bytes: [${Array.from(wordBytes).join(', ')}]`);
     const updatedPrivateState = createBBoardPrivateState(
       currentPrivateState.secretKey,
       currentPrivateState.salt,
       wordBytes
     );
+    
+    this.logger?.info(`Updated private state: secretKey=${!!updatedPrivateState.secretKey}, salt=${!!updatedPrivateState.salt}, word=${!!updatedPrivateState.word}`);
+    this.logger?.info(`Salt buffer check: ${updatedPrivateState.salt?.constructor.name}, length: ${updatedPrivateState.salt?.length}, buffer: ${!!updatedPrivateState.salt?.buffer}`);
+    
     await this.providers.privateStateProvider.set(bboardPrivateStateKey, updatedPrivateState);
+    this.logger?.info('Private state saved to provider');
+
+    // Verify the save worked
+    const verifyState = await this.providers.privateStateProvider.get(bboardPrivateStateKey);
+    this.logger?.info(`Verification - private state retrieved: secretKey=${!!verifyState?.secretKey}, salt=${!!verifyState?.salt}, word=${!!verifyState?.word}`);
+    if (verifyState?.salt) {
+      this.logger?.info(`Verification - salt details: ${verifyState.salt.constructor.name}, length: ${verifyState.salt.length}, buffer: ${!!verifyState.salt.buffer}`);
+    }
 
     // Trigger state refresh
     this.privateStateRefresh$.next(Date.now());
@@ -179,19 +194,21 @@ export class WordleAPI implements DeployedWordleAPI {
    * @param word The 5-letter word to use for the game.
    */
   async joinAsPlayer2(word: string): Promise<void> {
-    this.logger?.info(`joinAsPlayer2: ${word}`);
+    this.logger?.info(`joinAsPlayer2: ${word} -> ${word.toUpperCase()}`);
 
-    // Update private state with the chosen word
-    const currentPrivateState = await this.providers.privateStateProvider.get(bboardPrivateStateKey);
-    if (!currentPrivateState) {
-      throw new Error("Private state not found. Make sure you've deployed or joined a contract first.");
-    }
-    const wordBytes = new Uint8Array([...word].map(c => c.charCodeAt(0)));
+    // Always get fresh private state to ensure it's valid
+    const currentPrivateState = await WordleAPI.getPrivateState(this.providers);
+
+    // Ensure consistent case handling - convert to uppercase
+    const normalizedWord = word.toUpperCase();
+    const wordBytes = new Uint8Array([...normalizedWord].map(c => c.charCodeAt(0)));
+    this.logger?.info(`Word bytes: [${Array.from(wordBytes).join(', ')}]`);
     const updatedPrivateState = createBBoardPrivateState(
       currentPrivateState.secretKey,
       currentPrivateState.salt,
       wordBytes
     );
+    
     await this.providers.privateStateProvider.set(bboardPrivateStateKey, updatedPrivateState);
 
     // Trigger state refresh
@@ -303,7 +320,10 @@ export class WordleAPI implements DeployedWordleAPI {
       throw new Error("Word must be exactly 5 characters");
     }
     
-    const letters = word.toUpperCase().split('').map(char => BigInt(char.charCodeAt(0)));
+    const normalizedWord = word.toUpperCase();
+    const letters = normalizedWord.split('').map(char => BigInt(char.charCodeAt(0)));
+    
+    this.logger?.info(`stringToWord: ${word} -> ${normalizedWord} -> [${letters.join(', ')}]`);
     
     return {
       first_letter: letters[0],
@@ -389,12 +409,65 @@ export class WordleAPI implements DeployedWordleAPI {
   }
 
   private static async getPrivateState(providers: WordleProviders): Promise<BBoardPrivateState> {
+    // Try to get from private state provider first
     const existingPrivateState = await providers.privateStateProvider.get(bboardPrivateStateKey);
-    return existingPrivateState ?? createBBoardPrivateState(
-      utils.randomBytes(32), // secretKey
-      utils.randomBytes(32), // salt
-      new Uint8Array([67, 82, 65, 78, 69]) // default word "CRANE"
-    );
+    
+    if (existingPrivateState && existingPrivateState.salt && existingPrivateState.secretKey) {
+      console.log('getPrivateState: found valid existing state');
+      return existingPrivateState;
+    }
+    
+    console.log('getPrivateState: creating new state');
+    
+    // Generate or retrieve persistent keys from localStorage
+    const getOrCreateKey = (keyName: string): Uint8Array => {
+      const stored = localStorage.getItem(`wordle_${keyName}`);
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          return new Uint8Array(parsed);
+        } catch (e) {
+          console.warn(`Failed to parse stored ${keyName}, generating new one`);
+        }
+      }
+      
+      // Generate new key
+      const newKey = utils.randomBytes(32);
+      localStorage.setItem(`wordle_${keyName}`, JSON.stringify(Array.from(newKey)));
+      return newKey;
+    };
+    
+    const secretKey = getOrCreateKey('secretKey');
+    const salt = getOrCreateKey('salt');
+    const defaultWord = new Uint8Array([67, 82, 65, 78, 69]); // "CRANE"
+    
+    console.log('getPrivateState: created components', {
+      secretKey: !!secretKey,
+      salt: !!salt,
+      word: !!defaultWord,
+      secretKeyType: secretKey?.constructor.name,
+      saltType: salt?.constructor.name,
+      wordType: defaultWord?.constructor.name,
+      secretKeyLength: secretKey?.length,
+      saltLength: salt?.length,
+      saltBuffer: !!salt?.buffer
+    });
+    
+    const newState = createBBoardPrivateState(secretKey, salt, defaultWord);
+    
+    console.log('getPrivateState: created private state', {
+      secretKey: !!newState.secretKey,
+      salt: !!newState.salt,
+      word: !!newState.word,
+      saltBuffer: !!newState.salt?.buffer,
+      saltType: newState.salt?.constructor?.name,
+      saltLength: newState.salt?.length
+    });
+    
+    // Save to private state provider for consistency
+    await providers.privateStateProvider.set(bboardPrivateStateKey, newState);
+    
+    return newState;
   }
 }
 

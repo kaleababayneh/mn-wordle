@@ -29,7 +29,10 @@ interface GuessResultDisplayProps {
 
 const GuessResultDisplay: React.FC<GuessResultDisplayProps> = ({ guess, result }) => {
   const getLetterColor = (letterResult: bigint): string => {
-    switch (Number(letterResult)) {
+    const numResult = Number(letterResult);
+    console.log('Letter result:', letterResult, 'Number:', numResult);
+    
+    switch (numResult) {
       case 2: return '#4caf50'; // Green - correct position
       case 1: return '#ff9800'; // Orange - wrong position but in word
       default: return '#9e9e9e'; // Gray - not in word
@@ -46,6 +49,8 @@ const GuessResultDisplay: React.FC<GuessResultDisplayProps> = ({ guess, result }
     result.fourth_letter_result,
     result.fifth_letter_result,
   ];
+
+  console.log('Guess:', guess, 'Results:', results.map(r => Number(r)));
 
   return (
     <Box display="flex" gap={1} justifyContent="center" my={1}>
@@ -135,14 +140,25 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
     setError(null);
 
     try {
+      console.log('Attempting to join game...', { asPlayer1, word: playerWord });
+      
       if (asPlayer1) {
         await api.joinAsPlayer1(playerWord.toLowerCase());
       } else {
         await api.joinAsPlayer2(playerWord.toLowerCase());
       }
       setPlayerWord(''); // Clear the word for security
+      console.log('Successfully joined game');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to join game');
+      console.error('Join game error:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to join game';
+      setError(errorMessage);
+      
+      // Additional debugging for buffer errors
+      if (errorMessage.includes('buffer')) {
+        console.error('Buffer-related error detected:', err);
+        setError('Connection error - please try refreshing the page and reconnecting your wallet');
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -207,7 +223,18 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
     <Card sx={{ maxWidth: 600, margin: 'auto', mt: 4 }}>
       <CardHeader
         title="P2P ZK Wordle"
-        subheader={state ? getGameStateLabel(state.gameState) : 'Connecting...'}
+        subheader={
+          <Box>
+            <Typography variant="body2">
+              {state ? getGameStateLabel(state.gameState) : 'Connecting...'}
+            </Typography>
+            {api?.deployedContractAddress && (
+              <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 1 }}>
+                Contract: {api.deployedContractAddress.toString()}
+              </Typography>
+            )}
+          </Box>
+        }
         action={
           <Box>
             {state && (
