@@ -44,6 +44,7 @@ export interface DeployedWordleAPI {
   stringToWord: (word: string) => Word;
   wordToString: (word: Word) => string;
   clearPrivateState: () => Promise<void>;
+  debugLocalStorage: () => void;
 
   // New helper methods for competitive display
   getPlayerGuesses: (player: 'player1' | 'player2') => Promise<Array<{word: string, result: number[] | null}>>;
@@ -186,18 +187,8 @@ export class WordleAPI implements DeployedWordleAPI {
     this.logger?.info(`Updated private state: secretKey=${!!updatedPrivateState.secretKey}, salt=${!!updatedPrivateState.salt}, word=${!!updatedPrivateState.word}`);
     this.logger?.info(`Salt buffer check: ${updatedPrivateState.salt?.constructor.name}, length: ${updatedPrivateState.salt?.length}, buffer: ${!!updatedPrivateState.salt?.buffer}`);
     
-    await this.providers.privateStateProvider.set(bboardPrivateStateKey, updatedPrivateState);
-    this.logger?.info('Private state saved to provider');
-
-    // Verify the save worked
-    const verifyState = await this.providers.privateStateProvider.get(bboardPrivateStateKey);
-    this.logger?.info(`Verification - private state retrieved: secretKey=${!!verifyState?.secretKey}, salt=${!!verifyState?.salt}, word=${!!verifyState?.word}`);
-    if (verifyState?.salt) {
-      this.logger?.info(`Verification - salt details: ${verifyState.salt.constructor.name}, length: ${verifyState.salt.length}, buffer: ${!!verifyState.salt.buffer}`);
-    }
-
-    // Trigger state refresh
-    this.privateStateRefresh$.next(Date.now());
+    // Save to both provider and localStorage for persistence
+    await this.savePrivateState(updatedPrivateState);
 
     const txData = await this.deployedContract.callTx.join_p1();
 
@@ -231,10 +222,8 @@ export class WordleAPI implements DeployedWordleAPI {
       wordBytes
     );
     
-    await this.providers.privateStateProvider.set(bboardPrivateStateKey, updatedPrivateState);
-
-    // Trigger state refresh
-    this.privateStateRefresh$.next(Date.now());
+    // Save to both provider and localStorage for persistence
+    await this.savePrivateState(updatedPrivateState);
 
     const txData = await this.deployedContract.callTx.join_p2();
 
@@ -289,6 +278,10 @@ export class WordleAPI implements DeployedWordleAPI {
     }
     
     this.logger?.info(`Private state validation passed - secretKey: ${currentPrivateState.secretKey.length}B, salt: ${currentPrivateState.salt.length}B, word: ${currentPrivateState.word.length}B`);
+    
+    // Debug: Show what word is being used for verification
+    const myWord = new TextDecoder().decode(currentPrivateState.word).slice(0, 5);
+    this.logger?.info(`Debug - My stored word for verification: "${myWord}"`);
     
     // Get current ledger state
     const ledgerStateObservable = this.providers.publicDataProvider.contractStateObservable(this.deployedContractAddress, { type: 'latest' });
@@ -412,6 +405,64 @@ export class WordleAPI implements DeployedWordleAPI {
   }
 
   /**
+   * Save private state to both privateStateProvider and localStorage for persistence.
+   * This ensures consistency between provider and localStorage storage.
+   */
+  private async savePrivateState(privateState: BBoardPrivateState): Promise<void> {
+    // Save to private state provider
+    await this.providers.privateStateProvider.set(bboardPrivateStateKey, privateState);
+    
+    // Also save to localStorage for persistence
+    const contractSuffix = this.deployedContractAddress.slice(-8);
+    const contractSpecificKey = `wordle_privateState_${contractSuffix}`;
+    const stateToStore = {
+      secretKey: Array.from(privateState.secretKey),
+      salt: Array.from(privateState.salt),
+      word: Array.from(privateState.word)
+    };
+    localStorage.setItem(contractSpecificKey, JSON.stringify(stateToStore));
+    
+    this.logger?.info(`Private state saved to both provider and localStorage for contract ${contractSuffix}`);
+    this.logger?.info(`Word saved: ${new TextDecoder().decode(privateState.word).slice(0, 5)}`);
+    
+    // Trigger state refresh
+    this.privateStateRefresh$.next(Date.now());
+  }
+
+  /**
+   * Debug method to check localStorage contents for troubleshooting.
+   */
+  debugLocalStorage(): void {
+    const contractSuffix = this.deployedContractAddress.slice(-8);
+    const keys = [
+      `wordle_secretKey_${contractSuffix}`,
+      `wordle_salt_${contractSuffix}`,
+      `wordle_privateState_${contractSuffix}`
+    ];
+    
+    console.log(`=== DEBUG: localStorage for contract ${contractSuffix} ===`);
+    keys.forEach(key => {
+      const value = localStorage.getItem(key);
+      if (value) {
+        try {
+          const parsed = JSON.parse(value);
+          if (key.includes('privateState')) {
+            const word = parsed.word ? new TextDecoder().decode(new Uint8Array(parsed.word)).slice(0, 5) : 'N/A';
+            console.log(`${key}: Found complete state with word "${word}"`);
+          } else {
+            console.log(`${key}: Found array of length ${parsed.length}`);
+          }
+        } catch (e) {
+          console.log(`${key}: Found value but failed to parse`);
+        }
+      } else {
+        console.log(`${key}: Not found`);
+      }
+    });
+    console.log(`=== END DEBUG ===`);
+  }
+
+  /**
    * Convert a string to a Word struct.
    *
    * @param word The 5-letter string to convert.
@@ -529,6 +580,31 @@ export class WordleAPI implements DeployedWordleAPI {
         return existingPrivateState;
       } else {
         console.warn('getPrivateState: existing state has invalid dimensions, creating new one');
+      }
+    }
+    
+    // Try to load complete state from localStorage if it exists
+    const storedStateKey = `wordle_privateState_${contractSuffix}`;
+    const storedState = localStorage.getItem(storedStateKey);
+    if (storedState) {
+      try {
+        const parsed = JSON.parse(storedState);
+        if (parsed.secretKey && parsed.salt && parsed.word &&
+            parsed.secretKey.length === 32 && parsed.salt.length === 32 && parsed.word.length === 5) {
+          const restoredState = createBBoardPrivateState(
+            new Uint8Array(parsed.secretKey),
+            new Uint8Array(parsed.salt),
+            new Uint8Array(parsed.word)
+          );
+          console.log(`Restored complete private state from localStorage for contract ${contractSuffix}`);
+          console.log(`Restored word: ${new TextDecoder().decode(restoredState.word).slice(0, 5)}`);
+          
+          // Save to provider for consistency
+          await providers.privateStateProvider.set(bboardPrivateStateKey, restoredState);
+          return restoredState;
+        }
+      } catch (e) {
+        console.warn(`Failed to parse stored complete state for contract ${contractSuffix}:`, e);
       }
     }
     

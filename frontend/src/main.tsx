@@ -23,6 +23,7 @@ import './globals';
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { BrowserRouter } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material';
 import { setNetworkId, NetworkId } from '@midnight-ntwrk/midnight-js-network-id';
 import App from './App';
@@ -47,10 +48,12 @@ logger.trace(`networkId = ${networkId}`);
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <CssBaseline />
-    <ThemeProvider theme={theme}>
-      <DeployedBoardProvider logger={logger}>
-        <App />
-      </DeployedBoardProvider>
-    </ThemeProvider>
+    <BrowserRouter>
+      <ThemeProvider theme={theme}>
+        <DeployedBoardProvider logger={logger}>
+          <App />
+        </DeployedBoardProvider>
+      </ThemeProvider>
+    </BrowserRouter>
   </React.StrictMode>,
 );

@@ -457,6 +457,20 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
           {error && (
             <Alert severity="error" sx={{ mb: 3 }}>
               {error}
+              {/* Debug button for localStorage inspection */}
+              {api && (
+                <Button 
+                  size="small" 
+                  onClick={() => {
+                    console.log('=== DEBUGGING PRIVATE STATE ===');
+                    api.debugLocalStorage();
+                    console.log('Contract Address:', api.deployedContractAddress);
+                  }}
+                  sx={{ ml: 2, mt: 1, display: 'block' }}
+                >
+                  Debug Private State
+                </Button>
+              )}
             </Alert>
           )}
 
