@@ -79,8 +79,8 @@ export type DeployedWordleContract = FoundContract<WordleContract>;
  */
 export type WordleDerivedState = {
   readonly gameState: GameState;
-  readonly currentGuess: Word | null;
-  readonly lastGuessResult: GuessResult | null;
+  readonly p1CurrentGuess: Word | null;
+  readonly p2CurrentGuess: Word | null;
   
   // Player 1 state
   readonly p1: Uint8Array | null;

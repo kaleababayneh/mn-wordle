@@ -12,7 +12,7 @@
     "ci": "npm run typecheck && npm run lint",
     "dev": "vite",
     "lint": "eslint ./src",
-    "start": "http-server --port 8075 --proxy 'http://localhost:8075?' ./dist",
+    "start": "http-server --port 8074 --proxy 'http://localhost:8074?' ./dist",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "preview": "vite preview",
     "prepack": "yarn build"

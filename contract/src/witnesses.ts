@@ -27,8 +27,15 @@ export const witnesses = {
     BBoardPrivateState,
     bigint[],
   ] => {
+    // Debug: Log what word the witness function is actually receiving
+    const wordStr = new TextDecoder().decode(privateState.word.slice(0, 5));
+    console.log(`WITNESS DEBUG: player_word received word: "${wordStr}"`);
+    console.log(`WITNESS DEBUG: word bytes: [${Array.from(privateState.word.slice(0, 5)).join(', ')}]`);
+    
     // Convert Uint8Array to bigint array (Vector<5, Uint<8>>)
     const wordArray = Array.from(privateState.word.slice(0, 5)).map(byte => BigInt(byte));
+    console.log(`WITNESS DEBUG: returning word array: [${wordArray.join(', ')}]`);
+    
     return [privateState, wordArray];
   },
 

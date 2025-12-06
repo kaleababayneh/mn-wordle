@@ -227,7 +227,8 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
     if (state && api) {
       console.log('=== STATE DEBUG ===');
       console.log('Game state:', state.gameState);
-      console.log('Current guess from contract:', state.currentGuess ? api.wordToString(state.currentGuess) : 'null');
+      console.log('P1 current guess:', state.p1CurrentGuess ? api.wordToString(state.p1CurrentGuess) : 'null');
+      console.log('P2 current guess:', state.p2CurrentGuess ? api.wordToString(state.p2CurrentGuess) : 'null');
       console.log('P1 guess count:', state.p1GuessCount.toString());
       console.log('P2 guess count:', state.p2GuessCount.toString());
       console.log('My guesses array:', myGuesses);
@@ -459,17 +460,35 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
               {error}
               {/* Debug button for localStorage inspection */}
               {api && (
-                <Button 
-                  size="small" 
-                  onClick={() => {
-                    console.log('=== DEBUGGING PRIVATE STATE ===');
-                    api.debugLocalStorage();
-                    console.log('Contract Address:', api.deployedContractAddress);
-                  }}
-                  sx={{ ml: 2, mt: 1, display: 'block' }}
-                >
-                  Debug Private State
-                </Button>
+                <Box sx={{ mt: 1, display: 'flex', gap: 1 }}>
+                  <Button 
+                    size="small" 
+                    onClick={() => {
+                      console.log('=== DEBUGGING PRIVATE STATE ===');
+                      api.debugLocalStorage();
+                      console.log('Contract Address:', api.deployedContractAddress);
+                    }}
+                  >
+                    Debug Private State
+                  </Button>
+                  <Button 
+                    size="small" 
+                    onClick={async () => {
+                      console.log('=== FORCE REFRESHING FROM LOCALSTORAGE ===');
+                      try {
+                        await api.forceRefreshFromLocalStorage();
+                        console.log('Force refresh completed successfully');
+                        // Trigger a re-render
+                        window.location.reload();
+                      } catch (error) {
+                        console.error('Force refresh failed:', error);
+                      }
+                    }}
+                    color="warning"
+                  >
+                    Force Refresh Word
+                  </Button>
+                </Box>
               )}
             </Alert>
           )}

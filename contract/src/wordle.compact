@@ -35,7 +35,8 @@ export struct PlayerResult {
 }
 // Game state management
 export ledger game_state: GAME_STATE;
-export ledger current_guess: Word;                    // Current guess being made
+export ledger p1_current_guess: Word;                  // Player 1's current guess
+export ledger p2_current_guess: Word;                  // Player 2's current guess
 
 // Player 1 state
 export ledger p1: Maybe<Bytes<32>>;                     // Player 1 identity hash
@@ -78,14 +79,16 @@ constructor() {
   p2_results = PlayerResult { guess_words: words, guess_results: results };
   
   // Initialize with non-English characters that won't match any real word
-  // Using characters like '@', '#', '$', '%', '&' (ASCII 64, 35, 36, 37, 38)
-  current_guess = disclose(Word {
-    first_letter: 64,   // '@'
-    second_letter: 35,  // '#'
-    third_letter: 36,   // '$'
-    fourth_letter: 37,  // '%'
-    fifth_letter: 38    // '&'
-  });
+  // Using characters  '.' (ASCII 46)
+  const emptyGuess = Word {
+    first_letter: 46,   // '.'
+    second_letter: 46,  // '.'
+    third_letter: 46,   // '.'
+    fourth_letter: 46,  // '.'
+    fifth_letter: 46   // '.'
+  };
+  p1_current_guess = disclose(emptyGuess);
+  p2_current_guess = disclose(emptyGuess);
 }
 // Player 1 joins the game
 export circuit join_p1(): [] {
@@ -168,7 +171,7 @@ export circuit turn_player1(guess: Word): [] {
   // Clear previous result BEFORE making new guess
   p1_last_guess_result = disclose(none<GuessResult>());
   
-  current_guess = disclose(guess);
+  p1_current_guess = disclose(guess);
   p1_guess_count.increment(1);
   
   // Only verify P2's guess if P2 has actually made a guess
@@ -214,8 +217,8 @@ export circuit verify_p1_guess(): [] {
     fifth_letter: disclose(my_word[4] as Uint<8>)
   };
   
-  // Evaluate Player 1's guess
-  const result = disclose(evaluate_guess(word_struct, current_guess));
+  // Evaluate Player 1's guess against Player 2's word
+  const result = disclose(evaluate_guess(word_struct, p1_current_guess));
   p1_last_guess_result = disclose(some<GuessResult>(result));
 
   // Store only the result (using count-1 since count was already incremented)
@@ -287,7 +290,7 @@ export circuit turn_player2(guess: Word): [] {
   // Clear previous result BEFORE making new guess
   p2_last_guess_result = disclose(none<GuessResult>());
   
-  current_guess = disclose(guess);
+  p2_current_guess = disclose(guess);
   p2_guess_count.increment(1);
   
   // Always verify P1's guess since P2 only plays after P1 has made at least one guess
@@ -333,7 +336,7 @@ export circuit verify_p2_guess(): [] {
     fifth_letter: disclose(my_word[4] as Uint<8>)
   };
   
-  const result = disclose(evaluate_guess(word_struct, current_guess));
+  const result = disclose(evaluate_guess(word_struct, p2_current_guess));
   p2_last_guess_result = disclose(some<GuessResult>(result));
 
   // Store only the result (using count-1 since count was already incremented)
