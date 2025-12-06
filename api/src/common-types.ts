@@ -2,7 +2,7 @@
 import { type MidnightProviders } from '@midnight-ntwrk/midnight-js-types';
 import { type FoundContract } from '@midnight-ntwrk/midnight-js-contracts';
 import type { BBoardPrivateState, Contract, Witnesses } from '../../contract/src/index';
-import type { Ledger, Word, GuessResult, Maybe } from '../../contract/src/managed/bboard/contract/index.cjs';
+import type { Ledger, Word, GuessResult, Maybe } from '../../contract/src/managed/wordle/contract/index.cjs';
 
 export const bboardPrivateStateKey = 'bboardPrivateState';
 export type PrivateStateId = typeof bboardPrivateStateKey;
@@ -12,12 +12,10 @@ export enum GameState {
   WAITING_P1 = 0,
   WAITING_P2 = 1,
   P1_GUESS_TURN = 2,
-  P2_VERIFY_TURN = 3,
-  P2_GUESS_TURN = 4,
-  P1_VERIFY_TURN = 5,
-  P1_WINS = 6,
-  P2_WINS = 7,
-  DRAW = 8,
+  P2_GUESS_TURN = 3,
+  P1_WINS = 4,
+  P2_WINS = 5,
+  DRAW = 6,
 }
 
 /**

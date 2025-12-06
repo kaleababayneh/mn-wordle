@@ -15,7 +15,7 @@ import {
   type Word,
   type GuessResult,
   type Witnesses,
-} from "../managed/bboard/contract/index.cjs";
+} from "../managed/wordle/contract/index.cjs";
 import { type BBoardPrivateState, witnesses, createBBoardPrivateState } from "../witnesses.js";
 import * as crypto from 'node:crypto';
 

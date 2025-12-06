@@ -23,9 +23,7 @@ enum GAME_STATE {
   waiting_p1,
   waiting_p2, 
   p1_guess_turn,
-  p2_verify_turn,
   p2_guess_turn,
-  p1_verify_turn,
   p1_wins,
   p2_wins,
   draw
@@ -62,6 +60,15 @@ constructor() {
   game_state = GAME_STATE.waiting_p1;
   p1_guess_count.resetToDefault();
   p2_guess_count.resetToDefault();
+  // Initialize with non-English characters that won't match any real word
+  // Using characters like '@', '#', '$', '%', '&' (ASCII 64, 35, 36, 37, 38)
+  current_guess = disclose(Word {
+    first_letter: 64,   // '@'
+    second_letter: 35,  // '#'
+    third_letter: 36,   // '$'
+    fourth_letter: 37,  // '%'
+    fifth_letter: 38    // '&'
+  });
 }
 // Player 1 joins the game
 export circuit join_p1(): [] {
@@ -84,7 +91,7 @@ export circuit join_p1(): [] {
     salt,
     secret_key
   ]));
-  
+
   game_state = GAME_STATE.waiting_p2;
 }
 
@@ -123,17 +130,21 @@ export circuit turn_player1(guess: Word): [] {
   const me = public_key(sk);
   assert (p1.value == me, "You are not player 1");
   
+  // Only verify P2's guess if P2 has actually made a guess
+  verify_p2_guess();
+  
+  
   current_guess = disclose(guess);
   p1_guess_count.increment(1);
   
   // Player 2 will verify this guess
-  game_state = GAME_STATE.p2_verify_turn;
-  last_guess_result = disclose(none<GuessResult>());
+  game_state = GAME_STATE.p2_guess_turn;
+  //last_guess_result = disclose(none<GuessResult>());
 }
 
 // Player 2 verifies Player 1's guess
 export circuit verify_p1_guess(): [] {
-  assert (game_state == GAME_STATE.p2_verify_turn, "Not player 2's verify turn");
+  assert (game_state == GAME_STATE.p2_guess_turn, "Not player 2's verify turn");
   
   const sk = local_secret_key();
   const secret_key = persistentHash<Vector<2, Bytes<32>>>([sk, kernel.self().bytes]);
@@ -183,8 +194,6 @@ export circuit verify_p1_guess(): [] {
     return;
   }
   
-  // Continue to Player 2's guess turn
-  game_state = GAME_STATE.p2_guess_turn;
 }
 
 // Player 2's turn to guess Player 1's word
@@ -196,17 +205,19 @@ export circuit turn_player2(guess: Word): [] {
   const me = public_key(sk);
   assert (p2.value == me, "You are not player 2");
   
+  // Always verify P1's guess since P2 only plays after P1 has made at least one guess
+  verify_p1_guess();
+  
   current_guess = disclose(guess);
   p2_guess_count.increment(1);
   
-  // Player 1 will verify this guess
-  game_state = GAME_STATE.p1_verify_turn;
-  last_guess_result = disclose(none<GuessResult>());
+  //last_guess_result = disclose(none<GuessResult>());
+  game_state = GAME_STATE.p1_guess_turn;
 }
 
 // Player 1 verifies Player 2's guess
 export circuit verify_p2_guess(): [] {
-  assert (game_state == GAME_STATE.p1_verify_turn, "Not player 1's verify turn");
+  assert (game_state == GAME_STATE.p1_guess_turn, "Not player 1's verify turn");
   
   const sk = local_secret_key();
   const secret_key = persistentHash<Vector<2, Bytes<32>>>([sk, kernel.self().bytes]);
@@ -255,7 +266,6 @@ export circuit verify_p2_guess(): [] {
   }
   
   // Continue to Player 1's guess turn
-  game_state = GAME_STATE.p1_guess_turn;
 }
 
 // Pure function to evaluate a guess against a word

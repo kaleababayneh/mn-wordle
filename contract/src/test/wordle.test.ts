@@ -9,7 +9,7 @@ import {
   stringToWord, 
   wordToString,
   GAME_STATE 
-} from './p2p-wordle-simulator.js';
+} from './wordle-simulator.js';
 
 // Test player setups
 const player1SecretKey = randomSecretKey();

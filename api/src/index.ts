@@ -1,5 +1,4 @@
-
-import contractModule from '../../contract/src/managed/bboard/contract/index.cjs';
+import contractModule from '../../contract/src/managed/wordle/contract/index.cjs';
 const { Contract, ledger, pureCircuits } = contractModule;
 
 import { type ContractAddress } from '@midnight-ntwrk/compact-runtime';
@@ -34,14 +33,17 @@ export interface DeployedWordleAPI {
   joinAsPlayer1: (word: string) => Promise<void>;
   joinAsPlayer2: (word: string) => Promise<void>;
   
-  // Game actions
+  // Game actions - now streamlined with automatic verification
   makeGuess: (word: string) => Promise<void>;
-  verifyP1Guess: () => Promise<void>;  // Player 2 verifies Player 1's guess
-  verifyP2Guess: () => Promise<void>;  // Player 1 verifies Player 2's guess
+  
+  // Legacy verification methods (rarely needed with new streamlined workflow)
+  verifyP1Guess: () => Promise<void>;  
+  verifyP2Guess: () => Promise<void>;  
   
   // Utility methods
   stringToWord: (word: string) => Word;
   wordToString: (word: Word) => string;
+  clearPrivateState: () => Promise<void>;
 }
 
 /**
@@ -96,11 +98,10 @@ export class WordleAPI implements DeployedWordleAPI {
         if (isPlayer1) playerRole = 'player1';
         else if (isPlayer2) playerRole = 'player2';
 
+        // Updated for simplified contract - only P1_GUESS_TURN and P2_GUESS_TURN during gameplay
         const isMyTurn = 
           (ledgerState.game_state === GameState.P1_GUESS_TURN && isPlayer1) ||
-          (ledgerState.game_state === GameState.P2_GUESS_TURN && isPlayer2) ||
-          (ledgerState.game_state === GameState.P1_VERIFY_TURN && isPlayer1) ||
-          (ledgerState.game_state === GameState.P2_VERIFY_TURN && isPlayer2);
+          (ledgerState.game_state === GameState.P2_GUESS_TURN && isPlayer2);
 
         const canJoin = 
           (ledgerState.game_state === GameState.WAITING_P1 && !ledgerState.p1.is_some) ||
@@ -227,6 +228,13 @@ export class WordleAPI implements DeployedWordleAPI {
 
   /**
    * Make a guess at the opponent's word.
+   * 
+   * This now automatically handles verification of the previous opponent's guess
+   * when applicable, making it a streamlined single-step operation.
+   * 
+   * Contract behavior:
+   * - turn_player1: Verifies P2's previous guess (if p2_guess_count != 0), then makes P1's guess
+   * - turn_player2: Verifies P1's previous guess, then makes P2's guess
    *
    * @param word The 5-letter word to guess.
    */
@@ -235,14 +243,35 @@ export class WordleAPI implements DeployedWordleAPI {
 
     const wordStruct = this.stringToWord(word);
 
-    // Get current private state and ledger state directly (bypassing potentially stale observable)
+    // Get current private state and validate it thoroughly
     const currentPrivateState = await this.providers.privateStateProvider.get(bboardPrivateStateKey);
-    const ledgerStateObservable = this.providers.publicDataProvider.contractStateObservable(this.deployedContractAddress, { type: 'latest' });
-    const ledgerState = await firstValueFrom(ledgerStateObservable);
     
     if (!currentPrivateState) {
-      throw new Error("Private state not found");
+      this.logger?.error("Private state not found - this should not happen");
+      throw new Error("Private state not found. Please refresh and reconnect your wallet.");
     }
+    
+    // Validate private state integrity
+    if (!currentPrivateState.secretKey || currentPrivateState.secretKey.length !== 32) {
+      this.logger?.error(`Invalid secret key: length=${currentPrivateState.secretKey?.length}`);
+      throw new Error("Invalid private state - secret key malformed. Please refresh and reconnect.");
+    }
+    
+    if (!currentPrivateState.salt || currentPrivateState.salt.length !== 32) {
+      this.logger?.error(`Invalid salt: length=${currentPrivateState.salt?.length}`);
+      throw new Error("Invalid private state - salt malformed. Please refresh and reconnect.");
+    }
+    
+    if (!currentPrivateState.word || currentPrivateState.word.length !== 5) {
+      this.logger?.error(`Invalid word: length=${currentPrivateState.word?.length}`);
+      throw new Error("Invalid private state - word malformed. Please refresh and reconnect.");
+    }
+    
+    this.logger?.info(`Private state validation passed - secretKey: ${currentPrivateState.secretKey.length}B, salt: ${currentPrivateState.salt.length}B, word: ${currentPrivateState.word.length}B`);
+    
+    // Get current ledger state
+    const ledgerStateObservable = this.providers.publicDataProvider.contractStateObservable(this.deployedContractAddress, { type: 'latest' });
+    const ledgerState = await firstValueFrom(ledgerStateObservable);
     
     // Compute player identity and role directly
     const playerIdentity = pureCircuits.public_key(currentPrivateState.secretKey);
@@ -257,29 +286,48 @@ export class WordleAPI implements DeployedWordleAPI {
     this.logger?.info(`makeGuess debug - P1 identity: ${ledgerData.p1.is_some ? toHex(ledgerData.p1.value) : 'none'}`);
     this.logger?.info(`makeGuess debug - P2 identity: ${ledgerData.p2.is_some ? toHex(ledgerData.p2.value) : 'none'}`);
     
-    let txData;
-    if (isPlayer1) {
-      txData = await this.deployedContract.callTx.turn_player1(wordStruct);
-    } else if (isPlayer2) {
-      txData = await this.deployedContract.callTx.turn_player2(wordStruct);
-    } else {
-      throw new Error("Not a player in this game");
+    if (!isPlayer1 && !isPlayer2) {
+      throw new Error("Not a player in this game - identity mismatch");
     }
+    
+    try {
+      let txData;
+      if (isPlayer1) {
+        // turn_player1 automatically verifies P2's previous guess if p2_guess_count != 0
+        this.logger?.info("Calling turn_player1 (with automatic P2 verification)");
+        txData = await this.deployedContract.callTx.turn_player1(wordStruct);
+      } else if (isPlayer2) {
+        // turn_player2 automatically verifies P1's previous guess
+        this.logger?.info("Calling turn_player2 (with automatic P1 verification)");
+        txData = await this.deployedContract.callTx.turn_player2(wordStruct);
+      } else {
+        throw new Error("Not a player in this game - invalid player state");
+      }
 
-    this.logger?.trace({
-      transactionAdded: {
-        circuit: isPlayer1 ? 'turn_player1' : 'turn_player2',
-        txHash: txData.public.txHash,
-        blockHeight: txData.public.blockHeight,
-      },
-    });
+      this.logger?.trace({
+        transactionAdded: {
+          circuit: isPlayer1 ? 'turn_player1' : 'turn_player2',
+          txHash: txData.public.txHash,
+          blockHeight: txData.public.blockHeight,
+        },
+      });
+    } catch (error) {
+      this.logger?.error(`Circuit call failed: ${error}`);
+      if (error instanceof Error && error.message.includes("Invalid proof")) {
+        throw new Error("Proof generation failed. This may indicate a private state inconsistency. Please refresh and try again.");
+      }
+      throw error;
+    }
   }
 
   /**
    * Player 2 verifies Player 1's guess.
+   * 
+   * @deprecated This is rarely needed with the new streamlined workflow since makeGuess() 
+   * handles verification automatically. Only use for manual verification in edge cases.
    */
   async verifyP1Guess(): Promise<void> {
-    this.logger?.info('verifyP1Guess');
+    this.logger?.info('verifyP1Guess (manual verification - rarely needed)');
 
     const txData = await this.deployedContract.callTx.verify_p1_guess();
 
@@ -294,9 +342,12 @@ export class WordleAPI implements DeployedWordleAPI {
 
   /**
    * Player 1 verifies Player 2's guess.
+   * 
+   * @deprecated This is rarely needed with the new streamlined workflow since makeGuess() 
+   * handles verification automatically. Only use for manual verification in edge cases.
    */
   async verifyP2Guess(): Promise<void> {
-    this.logger?.info('verifyP2Guess');
+    this.logger?.info('verifyP2Guess (manual verification - rarely needed)');
 
     const txData = await this.deployedContract.callTx.verify_p2_guess();
 
@@ -307,6 +358,36 @@ export class WordleAPI implements DeployedWordleAPI {
         blockHeight: txData.public.blockHeight,
       },
     });
+  }
+
+  /**
+   * Clear private state for this contract to force regeneration.
+   * Use this if you encounter persistent "Invalid proof" or key mismatch errors.
+   */
+  async clearPrivateState(): Promise<void> {
+    this.logger?.info('Clearing private state');
+    
+    const contractSuffix = this.deployedContractAddress.slice(-8);
+    
+    // Remove from localStorage
+    const keysToRemove = [
+      `wordle_secretKey_${contractSuffix}`,
+      `wordle_salt_${contractSuffix}`,
+      `wordle_privateState_${contractSuffix}`
+    ];
+    
+    keysToRemove.forEach(key => {
+      localStorage.removeItem(key);
+      this.logger?.info(`Removed localStorage key: ${key}`);
+    });
+    
+    // Clear from private state provider
+    await this.providers.privateStateProvider.set(bboardPrivateStateKey, await WordleAPI.getPrivateState(this.providers, this.deployedContractAddress));
+    
+    // Trigger state refresh
+    this.privateStateRefresh$.next(Date.now());
+    
+    this.logger?.info('Private state cleared and regenerated');
   }
 
   /**
@@ -413,34 +494,21 @@ export class WordleAPI implements DeployedWordleAPI {
     const contractSuffix = contractAddress ? contractAddress.slice(-8) : 'default';
     console.log(`Getting private state for contract: ${contractSuffix}`);
     
-    // Check if we already have contract-specific private state
-    const contractSpecificKey = `wordle_privateState_${contractSuffix}`;
-    const storedPrivateState = localStorage.getItem(contractSpecificKey);
-    
-    if (storedPrivateState) {
-      try {
-        const parsed = JSON.parse(storedPrivateState);
-        const secretKey = new Uint8Array(parsed.secretKey);
-        const salt = new Uint8Array(parsed.salt);
-        const word = new Uint8Array(parsed.word);
-        
-        const restoredState = createBBoardPrivateState(secretKey, salt, word);
-        console.log(`Restored private state for contract ${contractSuffix}`);
-        
-        // Set to private state provider
-        await providers.privateStateProvider.set(bboardPrivateStateKey, restoredState);
-        return restoredState;
-      } catch (e) {
-        console.warn(`Failed to restore private state for contract ${contractSuffix}, creating new one`);
-      }
-    }
-    
     // Try to get from private state provider first
     const existingPrivateState = await providers.privateStateProvider.get(bboardPrivateStateKey);
     
     if (existingPrivateState && existingPrivateState.salt && existingPrivateState.secretKey) {
       console.log('getPrivateState: found valid existing state from provider');
-      return existingPrivateState;
+      
+      // Verify the state is properly formed
+      if (existingPrivateState.salt.length === 32 && 
+          existingPrivateState.secretKey.length === 32 && 
+          existingPrivateState.word && existingPrivateState.word.length === 5) {
+        console.log('getPrivateState: existing state is valid, using it');
+        return existingPrivateState;
+      } else {
+        console.warn('getPrivateState: existing state has invalid dimensions, creating new one');
+      }
     }
     
     console.log('getPrivateState: creating new state');
@@ -452,8 +520,13 @@ export class WordleAPI implements DeployedWordleAPI {
       if (stored) {
         try {
           const parsed = JSON.parse(stored);
-          console.log(`Retrieved ${keyName} for contract ${contractSuffix}`);
-          return new Uint8Array(parsed);
+          const key = new Uint8Array(parsed);
+          if (key.length === 32) {
+            console.log(`Retrieved valid ${keyName} for contract ${contractSuffix}`);
+            return key;
+          } else {
+            console.warn(`Stored ${keyName} has invalid length: ${key.length}, generating new one`);
+          }
         } catch (e) {
           console.warn(`Failed to parse stored ${keyName} for contract ${contractSuffix}, generating new one`);
         }
@@ -475,12 +548,9 @@ export class WordleAPI implements DeployedWordleAPI {
       secretKey: !!secretKey,
       salt: !!salt,
       word: !!defaultWord,
-      secretKeyType: secretKey?.constructor.name,
-      saltType: salt?.constructor.name,
-      wordType: defaultWord?.constructor.name,
       secretKeyLength: secretKey?.length,
       saltLength: salt?.length,
-      saltBuffer: !!salt?.buffer
+      wordLength: defaultWord?.length
     });
     
     const newState = createBBoardPrivateState(secretKey, salt, defaultWord);
@@ -490,9 +560,9 @@ export class WordleAPI implements DeployedWordleAPI {
       secretKey: !!newState.secretKey,
       salt: !!newState.salt,
       word: !!newState.word,
-      saltBuffer: !!newState.salt?.buffer,
-      saltType: newState.salt?.constructor?.name,
-      saltLength: newState.salt?.length
+      secretKeyLength: newState.secretKey?.length,
+      saltLength: newState.salt?.length,
+      wordLength: newState.word?.length
     });
     
     // Save to private state provider for consistency
@@ -504,6 +574,7 @@ export class WordleAPI implements DeployedWordleAPI {
       salt: Array.from(newState.salt),
       word: Array.from(newState.word)
     };
+    const contractSpecificKey = `wordle_privateState_${contractSuffix}`;
     localStorage.setItem(contractSpecificKey, JSON.stringify(stateToStore));
     console.log(`Saved private state to localStorage for contract ${contractSuffix}`);
     

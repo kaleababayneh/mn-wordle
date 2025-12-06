@@ -165,11 +165,16 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
 
   const canJoinAsPlayer1 = state?.gameState === GameState.WAITING_P1;
   const canJoinAsPlayer2 = state?.gameState === GameState.WAITING_P2;
-  const canMakeGuess = state?.isMyTurn && (state?.gameState === GameState.P1_GUESS_TURN || state?.gameState === GameState.P2_GUESS_TURN);
-  const canVerifyGuess = state?.isMyTurn && (state?.gameState === GameState.P1_VERIFY_TURN || state?.gameState === GameState.P2_VERIFY_TURN);
+  
   const isGameComplete = state?.gameState === GameState.P1_WINS || state?.gameState === GameState.P2_WINS || state?.gameState === GameState.DRAW;
+  
+  // Simplified and more explicit logic for when players can make guesses
+  const canMakeGuess = state && !isGameComplete && (
+    (state.isPlayer1 && state.gameState === GameState.P1_GUESS_TURN) ||
+    (state.isPlayer2 && state.gameState === GameState.P2_GUESS_TURN)
+  );
 
-  // Update guess history when state changes - only add results after verification
+  // Update guess history when state changes - add results when verification is complete
   useEffect(() => {
     if (state?.lastGuessResult && state?.currentGuess && api) {
       const guessWord = api.wordToString(state.currentGuess);
@@ -185,14 +190,14 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
       const isUnverified = result.every(r => r === 0);
       
       if (!isUnverified) {
-        // Only update results when we have actual verification results (not all zeros)
+        // Only update results when verification is complete (not all zeros)
         const gameState = state.gameState;
         
         if (gameState === GameState.P2_GUESS_TURN || 
-            gameState === 6 || // P1_WINS
-            gameState === 7 || // P2_WINS  
-            gameState === 8) { // DRAW
-          // Player 1's guess was just verified by Player 2
+            gameState === GameState.P1_WINS || 
+            gameState === GameState.P2_WINS ||
+            gameState === GameState.DRAW) {
+          // Player 1's guess was processed by Player 2
           setP1Guesses(prev => {
             const lastGuess = prev[prev.length - 1];
             if (lastGuess && lastGuess.word === guessWord && !lastGuess.result) {
@@ -203,10 +208,10 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
         }
         
         if (gameState === GameState.P1_GUESS_TURN ||
-            gameState === 6 || // P1_WINS
-            gameState === 7 || // P2_WINS
-            gameState === 8) { // DRAW
-          // Player 2's guess was just verified by Player 1
+            gameState === GameState.P1_WINS ||
+            gameState === GameState.P2_WINS ||
+            gameState === GameState.DRAW) {
+          // Player 2's guess was processed by Player 1
           setP2Guesses(prev => {
             const lastGuess = prev[prev.length - 1];
             if (lastGuess && lastGuess.word === guessWord && !lastGuess.result) {
@@ -219,11 +224,11 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
     }
   }, [state?.lastGuessResult, state?.currentGuess, state?.gameState, api]);
 
-  // Handle keyboard input
+  // Handle keyboard input - simplified condition
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
-      // Only handle keyboard input if it's specifically this player's turn to make a guess
-      if (!canMakeGuess || !state?.isMyTurn) return;
+      // Only handle keyboard input if this player can make a guess
+      if (!canMakeGuess) return;
 
       // Prevent default behavior for handled keys to avoid interference
       if (e.key === 'Backspace' || e.key === 'Enter' || /^[a-zA-Z]$/.test(e.key)) {
@@ -243,7 +248,7 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
 
     document.addEventListener('keydown', handleKeyPress);
     return () => document.removeEventListener('keydown', handleKeyPress);
-  }, [currentGuess, canMakeGuess, state?.isMyTurn]);
+  }, [currentGuess, canMakeGuess]);
 
   // Focus input when it becomes the player's turn
   useEffect(() => {
@@ -254,19 +259,17 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
 
   // Clear current guess when it's not the player's turn
   useEffect(() => {
-    if (!canMakeGuess || !state?.isMyTurn) {
+    if (!canMakeGuess) {
       setCurrentGuess('');
     }
-  }, [canMakeGuess, state?.isMyTurn]);
+  }, [canMakeGuess]);
 
   const getGameStateLabel = (gameState: GameState): string => {
     switch (gameState) {
       case GameState.WAITING_P1: return 'Waiting for Player 1';
       case GameState.WAITING_P2: return 'Waiting for Player 2';
       case GameState.P1_GUESS_TURN: return 'Player 1\'s Turn to Guess';
-      case GameState.P2_VERIFY_TURN: return 'Player 2 Verifying Guess';
       case GameState.P2_GUESS_TURN: return 'Player 2\'s Turn to Guess';
-      case GameState.P1_VERIFY_TURN: return 'Player 1 Verifying Guess';
       case GameState.P1_WINS: return 'Player 1 Wins!';
       case GameState.P2_WINS: return 'Player 2 Wins!';
       case GameState.DRAW: return 'Game Draw!';
@@ -293,9 +296,7 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
       case GameState.WAITING_P2:
         return 1;
       case GameState.P1_GUESS_TURN:
-      case GameState.P2_VERIFY_TURN:
       case GameState.P2_GUESS_TURN:
-      case GameState.P1_VERIFY_TURN:
         return 2;
       case GameState.P1_WINS:
       case GameState.P2_WINS:
@@ -305,12 +306,6 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
         return 0;
     }
   };
-
-  // const canJoinAsPlayer1 = state?.gameState === GameState.WAITING_P1;
-  // const canJoinAsPlayer2 = state?.gameState === GameState.WAITING_P2;
-  // const canMakeGuess = state?.isMyTurn && (state?.gameState === GameState.P1_GUESS_TURN || state?.gameState === GameState.P2_GUESS_TURN);
-  // const canVerifyGuess = state?.isMyTurn && (state?.gameState === GameState.P1_VERIFY_TURN || state?.gameState === GameState.P2_VERIFY_TURN);
-  // const isGameComplete = state?.gameState === GameState.P1_WINS || state?.gameState === GameState.P2_WINS || state?.gameState === GameState.DRAW;
 
   const handleJoinGame = async (asPlayer1: boolean) => {
     if (!api || !playerWord || playerWord.length !== 5) {
@@ -334,12 +329,12 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
     } catch (err) {
       console.error('Join game error:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to join game';
-      setError(errorMessage);
       
-      // Additional debugging for buffer errors
-      if (errorMessage.includes('buffer')) {
-        console.error('Buffer-related error detected:', err);
-        setError('Connection error - please try refreshing the page and reconnecting your wallet');
+      // Check for specific error types
+      if (errorMessage.includes('buffer') || errorMessage.includes('Invalid proof') || errorMessage.includes('self-verification failed')) {
+        setError('Private state error detected. Please refresh the page, reconnect your wallet, and try again. If the issue persists, try clearing your browser data for this site.');
+      } else {
+        setError(errorMessage);
       }
     } finally {
       setIsSubmitting(false);
@@ -364,31 +359,29 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
     setError(null);
 
     try {
-      // Check if we need to verify a guess first
-      console.log('Current game state:', state?.gameState);
-      
-      if (state?.gameState === GameState.P2_VERIFY_TURN && state?.isPlayer2) {
-        console.log('Need to verify P1 guess first...');
-        await api.verifyP1Guess();
-        console.log('P1 guess verified, proceeding with P2 guess...');
-        // Add a small delay to allow state to update
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      } else if (state?.gameState === GameState.P1_VERIFY_TURN && state?.isPlayer1) {
-        console.log('Need to verify P2 guess first...');
-        await api.verifyP2Guess();
-        console.log('P2 guess verified, proceeding with P1 guess...');
-        // Add a small delay to allow state to update
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-      
       // Add the current guess to the appropriate player's guess list immediately for UI feedback
       if (state?.isPlayer1) {
-        setP1Guesses(prev => [...prev, { word: currentGuess }]);
+        setP1Guesses(prev => {
+          // Check if this word is already in the list to prevent duplicates
+          const wordExists = prev.some(guess => guess.word === currentGuess);
+          if (!wordExists) {
+            return [...prev, { word: currentGuess }];
+          }
+          return prev;
+        });
       } else if (state?.isPlayer2) {
-        setP2Guesses(prev => [...prev, { word: currentGuess }]);
+        setP2Guesses(prev => {
+          // Check if this word is already in the list to prevent duplicates
+          const wordExists = prev.some(guess => guess.word === currentGuess);
+          if (!wordExists) {
+            return [...prev, { word: currentGuess }];
+          }
+          return prev;
+        });
       }
       
       console.log('Making guess with word:', currentGuess, 'length:', currentGuess.length, 'lowercase:', currentGuess.toLowerCase());
+      // The contract now automatically handles verification during guess transactions
       await api.makeGuess(currentGuess.toLowerCase());
       setCurrentGuess('');
     } catch (err) {
@@ -408,28 +401,11 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
         setError(`Word validation error: ${errorMessage}. Please ensure you entered exactly 5 letters.`);
       } else if (errorMessage.includes('Unexpected length')) {
         setError(`State synchronization error. Try refreshing the page and reconnecting your wallet.`);
+      } else if (errorMessage.includes('Invalid proof') || errorMessage.includes('self-verification failed') || errorMessage.includes('private state inconsistency')) {
+        setError(`Cryptographic key mismatch detected. This can happen if your private state becomes corrupted. Please refresh the page, reconnect your wallet, and if the issue persists, try clearing your browser's localStorage for this site.`);
       } else {
         setError(errorMessage);
       }
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleVerifyGuess = async () => {
-    if (!api) return;
-
-    setIsSubmitting(true);
-    setError(null);
-
-    try {
-      if (state?.gameState === GameState.P2_VERIFY_TURN) {
-        await api.verifyP1Guess();
-      } else if (state?.gameState === GameState.P1_VERIFY_TURN) {
-        await api.verifyP2Guess();
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to verify guess');
     } finally {
       setIsSubmitting(false);
     }
@@ -573,16 +549,16 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
                   
                   <WordleBoard
                     guesses={p1Guesses}
-                    currentWord={canMakeGuess && state.isMyTurn ? currentGuess : ''}
-                    isActive={!!(canMakeGuess && state.isMyTurn)}
+                    currentWord={canMakeGuess ? currentGuess : ''}
+                    isActive={!!canMakeGuess}
                     playerName=""
                   />
                   
-                  {/* Player 1 Actions */}
-                  {canMakeGuess && state.isMyTurn && (
+                  {/* Player 1 Actions - Show input when it's P1's turn */}
+                  {canMakeGuess && (
                     <Box sx={{ mt: 3, p: 3, backgroundColor: '#e8f5e8', borderRadius: 2, border: '2px solid #4caf50' }}>
                       <Typography variant="h6" gutterBottom sx={{ color: '#2e7d32' }}>
-                        🎯 Your Turn! Type your guess 5 letters
+                        🎯 Your Turn! Type your guess (5 letters)
                       </Typography>
                       <TextField
                         inputRef={inputRef}
@@ -607,43 +583,21 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
                         size="large"
                         sx={{ backgroundColor: '#4caf50', '&:hover': { backgroundColor: '#388e3c' } }}
                       >
-                        Submit P1 Guess
+                        {isSubmitting ? 'Submitting...' : 'Submit P1 Guess'}
                       </Button>
-                    </Box>
-                  )}
-                  
-                  {canVerifyGuess && state.isMyTurn && (
-                    <Box sx={{ mt: 3, p: 3, backgroundColor: '#fff3e0', borderRadius: 2, border: '2px solid #ff9800' }}>
-                      <Typography variant="h6" gutterBottom sx={{ color: '#ef6c00' }}>
-                        🔍 Verify Player 2's Guess
+                      <Typography variant="body2" sx={{ mt: 1, color: '#666' }}>
+                        This will automatically verify Player 2's previous guess (if any) and make your guess
                       </Typography>
-                      {state.currentGuess && (
-                        <Box sx={{ mb: 2 }}>
-                          <Typography variant="h4" sx={{ fontFamily: 'monospace', letterSpacing: '0.3em', color: '#ef6c00' }}>
-                            {api?.wordToString(state.currentGuess).toUpperCase()}
-                          </Typography>
-                        </Box>
-                      )}
-                      <Button
-                        variant="contained"
-                        onClick={handleVerifyGuess}
-                        disabled={isSubmitting}
-                        size="large"
-                        color="warning"
-                      >
-                        Verify P2 Guess
-                      </Button>
                     </Box>
                   )}
                   
-                  {!state.isMyTurn && (
+                  {!canMakeGuess && (
                     <Box sx={{ mt: 3, p: 3, backgroundColor: '#f5f5f5', borderRadius: 2 }}>
                       <Typography variant="h6" gutterBottom sx={{ color: '#666' }}>
                         ⏳ Waiting for Player 2...
                       </Typography>
                       <Typography variant="body2" color="textSecondary">
                         {state.gameState === GameState.P2_GUESS_TURN && "Player 2 is making their guess"}
-                        {state.gameState === GameState.P2_VERIFY_TURN && "Player 2 is verifying your guess"}
                       </Typography>
                     </Box>
                   )}
@@ -698,16 +652,16 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
                   
                   <WordleBoard
                     guesses={p2Guesses}
-                    currentWord={canMakeGuess && state.isMyTurn ? currentGuess : ''}
-                    isActive={!!(canMakeGuess && state.isMyTurn)}
+                    currentWord={canMakeGuess ? currentGuess : ''}
+                    isActive={!!canMakeGuess}
                     playerName=""
                   />
                   
-                  {/* Player 2 Actions */}
-                  {canMakeGuess && state.isMyTurn && (
+                  {/* Player 2 Actions - Show input when it's P2's turn */}
+                  {canMakeGuess && (
                     <Box sx={{ mt: 3, p: 3, backgroundColor: '#e3f2fd', borderRadius: 2, border: '2px solid #2196f3' }}>
                       <Typography variant="h6" gutterBottom sx={{ color: '#1976d2' }}>
-                        🎯 Your Turn! Type your guess 5 letters
+                        🎯 Your Turn! Type your guess (5 letters)
                       </Typography>
                       <TextField
                         inputRef={inputRef}
@@ -732,43 +686,21 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
                         size="large"
                         sx={{ backgroundColor: '#2196f3', '&:hover': { backgroundColor: '#1976d2' } }}
                       >
-                        Submit P2 Guess
+                        {isSubmitting ? 'Submitting...' : 'Submit P2 Guess'}
                       </Button>
-                    </Box>
-                  )}
-                  
-                  {canVerifyGuess && state.isMyTurn && (
-                    <Box sx={{ mt: 3, p: 3, backgroundColor: '#fff3e0', borderRadius: 2, border: '2px solid #ff9800' }}>
-                      <Typography variant="h6" gutterBottom sx={{ color: '#ef6c00' }}>
-                        🔍 Verify Player 1's Guess
+                      <Typography variant="body2" sx={{ mt: 1, color: '#666' }}>
+                        This will automatically verify Player 1's guess and make your guess
                       </Typography>
-                      {state.currentGuess && (
-                        <Box sx={{ mb: 2 }}>
-                          <Typography variant="h4" sx={{ fontFamily: 'monospace', letterSpacing: '0.3em', color: '#ef6c00' }}>
-                            {api?.wordToString(state.currentGuess).toUpperCase()}
-                          </Typography>
-                        </Box>
-                      )}
-                      <Button
-                        variant="contained"
-                        onClick={handleVerifyGuess}
-                        disabled={isSubmitting}
-                        size="large"
-                        color="warning"
-                      >
-                        Verify P1 Guess
-                      </Button>
                     </Box>
                   )}
                   
-                  {!state.isMyTurn && (
+                  {!canMakeGuess && (
                     <Box sx={{ mt: 3, p: 3, backgroundColor: '#f5f5f5', borderRadius: 2 }}>
                       <Typography variant="h6" gutterBottom sx={{ color: '#666' }}>
                         ⏳ Waiting for Player 1...
                       </Typography>
                       <Typography variant="body2" color="textSecondary">
                         {state.gameState === GameState.P1_GUESS_TURN && "Player 1 is making their guess"}
-                        {state.gameState === GameState.P1_VERIFY_TURN && "Player 1 is verifying your guess"}
                       </Typography>
                     </Box>
                   )}
@@ -813,7 +745,7 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
               );
             }
             
-            // Fallback - should not happen if logic is correct
+            // Fallback - show debug info if player role detection fails
             return (
               <Box sx={{ p: 3, backgroundColor: '#ffebee', borderRadius: 2 }}>
                 <Typography variant="h6" color="error" align="center">
@@ -821,6 +753,12 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
                 </Typography>
                 <Typography variant="body2" align="center">
                   Player 1: {state.isPlayer1?.toString()}, Player 2: {state.isPlayer2?.toString()}
+                </Typography>
+                <Typography variant="body2" align="center">
+                  Game State: {state.gameState}, Can Make Guess: {canMakeGuess?.toString()}
+                </Typography>
+                <Typography variant="body2" align="center">
+                  Debug: P1_GUESS_TURN={GameState.P1_GUESS_TURN}, P2_GUESS_TURN={GameState.P2_GUESS_TURN}
                 </Typography>
               </Box>
             );

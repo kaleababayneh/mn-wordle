@@ -14,7 +14,7 @@ import {
   type Word,
   type GuessResult,
 } from '../../api/src/index';
-import { ledger, type Ledger } from '../../contract/src/managed/bboard/contract/index.cjs';
+import { ledger, type Ledger } from '../../contract/src/managed/wordle/contract/index.cjs';
 import {
   type BalancedTransaction,
   createBalancedTx,
@@ -151,7 +151,7 @@ const displayPrivateState = async (providers: WordleProviders, logger: Logger): 
     logger.info(`Current word: ${new TextDecoder().decode(privateState.word).slice(0, 5)}`);
     
     // Compute and display the player identity for debugging
-    const { pureCircuits } = await import('../../contract/src/managed/bboard/contract/index.cjs');
+    const { pureCircuits } = await import('../../contract/src/managed/wordle/contract/index.cjs');
     const playerIdentity = pureCircuits.public_key(privateState.secretKey);
     logger.info(`Your computed identity: ${toHex(playerIdentity)}`);
   }
