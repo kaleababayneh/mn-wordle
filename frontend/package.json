@@ -11,7 +11,7 @@
     "ci": "npm run typecheck && npm run lint",
     "dev": "vite",
     "lint": "eslint ./src",
-    "start": "http-server --port 0 ./dist",
+    "start": "http-server --port 8087 ./dist",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "preview": "vite preview",
     "prepack": "yarn build"

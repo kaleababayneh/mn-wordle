@@ -80,10 +80,12 @@ export type WordleDerivedState = {
   // Player 1 state
   readonly p1: Uint8Array | null;
   readonly p1GuessCount: bigint;
+  readonly p1LastGuessResult: GuessResult | null;
   
   // Player 2 state  
   readonly p2: Uint8Array | null;
   readonly p2GuessCount: bigint;
+  readonly p2LastGuessResult: GuessResult | null;
   
   // Current user info
   readonly isPlayer1: boolean;

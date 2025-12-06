@@ -174,55 +174,64 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
     (state.isPlayer2 && state.gameState === GameState.P2_GUESS_TURN)
   );
 
-  // Update guess history when state changes - add results when verification is complete
+  // Update guess history when state changes - use separate P1 and P2 guess results
   useEffect(() => {
-    if (state?.lastGuessResult && state?.currentGuess && api) {
-      const guessWord = api.wordToString(state.currentGuess);
+    if (!api) return;
+
+    // Update Player 1 guess results
+    if (state?.p1LastGuessResult) {
       const result = [
-        Number(state.lastGuessResult.first_letter_result),
-        Number(state.lastGuessResult.second_letter_result),
-        Number(state.lastGuessResult.third_letter_result),
-        Number(state.lastGuessResult.fourth_letter_result),
-        Number(state.lastGuessResult.fifth_letter_result),
+        Number(state.p1LastGuessResult.first_letter_result),
+        Number(state.p1LastGuessResult.second_letter_result),
+        Number(state.p1LastGuessResult.third_letter_result),
+        Number(state.p1LastGuessResult.fourth_letter_result),
+        Number(state.p1LastGuessResult.fifth_letter_result),
       ];
 
-      // Check if all results are 0 (meaning unverified guess)
-      const isUnverified = result.every(r => r === 0);
+      // Only update if not all zeros (meaning there's a real result)
+      const hasResult = !result.every(r => r === 0);
       
-      if (!isUnverified) {
-        // Only update results when verification is complete (not all zeros)
-        const gameState = state.gameState;
-        
-        if (gameState === GameState.P2_GUESS_TURN || 
-            gameState === GameState.P1_WINS || 
-            gameState === GameState.P2_WINS ||
-            gameState === GameState.DRAW) {
-          // Player 1's guess was processed by Player 2
-          setP1Guesses(prev => {
-            const lastGuess = prev[prev.length - 1];
-            if (lastGuess && lastGuess.word === guessWord && !lastGuess.result) {
-              return prev.map((g, i) => i === prev.length - 1 ? { ...g, result } : g);
-            }
-            return prev;
-          });
-        }
-        
-        if (gameState === GameState.P1_GUESS_TURN ||
-            gameState === GameState.P1_WINS ||
-            gameState === GameState.P2_WINS ||
-            gameState === GameState.DRAW) {
-          // Player 2's guess was processed by Player 1
-          setP2Guesses(prev => {
-            const lastGuess = prev[prev.length - 1];
-            if (lastGuess && lastGuess.word === guessWord && !lastGuess.result) {
-              return prev.map((g, i) => i === prev.length - 1 ? { ...g, result } : g);
-            }
-            return prev;
-          });
-        }
+      if (hasResult) {
+        console.log('Updating P1 guess result:', result);
+        setP1Guesses(prev => {
+          // Find the last uncolored guess and update it
+          const lastUncoloredIndex = prev.findLastIndex(guess => !guess.result);
+          console.log('P1 last uncolored index:', lastUncoloredIndex, 'prev:', prev);
+          if (lastUncoloredIndex !== -1) {
+            return prev.map((g, i) => i === lastUncoloredIndex ? { ...g, result } : g);
+          }
+          return prev;
+        });
       }
     }
-  }, [state?.lastGuessResult, state?.currentGuess, state?.gameState, api]);
+
+    // Update Player 2 guess results
+    if (state?.p2LastGuessResult) {
+      const result = [
+        Number(state.p2LastGuessResult.first_letter_result),
+        Number(state.p2LastGuessResult.second_letter_result),
+        Number(state.p2LastGuessResult.third_letter_result),
+        Number(state.p2LastGuessResult.fourth_letter_result),
+        Number(state.p2LastGuessResult.fifth_letter_result),
+      ];
+
+      // Only update if not all zeros (meaning there's a real result)
+      const hasResult = !result.every(r => r === 0);
+      
+      if (hasResult) {
+        console.log('Updating P2 guess result:', result);
+        setP2Guesses(prev => {
+          // Find the last uncolored guess and update it
+          const lastUncoloredIndex = prev.findLastIndex(guess => !guess.result);
+          console.log('P2 last uncolored index:', lastUncoloredIndex, 'prev:', prev);
+          if (lastUncoloredIndex !== -1) {
+            return prev.map((g, i) => i === lastUncoloredIndex ? { ...g, result } : g);
+          }
+          return prev;
+        });
+      }
+    }
+  }, [state?.p1LastGuessResult, state?.p2LastGuessResult, api]);
 
   // Handle keyboard input - simplified condition
   useEffect(() => {

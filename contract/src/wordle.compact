@@ -32,19 +32,20 @@ enum GAME_STATE {
 // Game state management
 export ledger game_state: GAME_STATE;
 export ledger current_guess: Word;                    // Current guess being made
-export ledger last_guess_result: Maybe<GuessResult>; // Result of last guess
 
 // Player 1 state
 export ledger p1: Maybe<Bytes<32>>;                     // Player 1 identity hash
 export ledger p1_public_key: Maybe<ZswapCoinPublicKey>; // Player 1 public key
 export ledger p1_word_hash: Bytes<32>;                  // Player 1 word commitment
 export ledger p1_guess_count: Counter;       // Number of guesses made
+export ledger p1_last_guess_result: Maybe<GuessResult>; // Result of last guess
 
 // Player 2 state  
 export ledger p2: Maybe<Bytes<32>>;                     // Player 2 identity hash
 export ledger p2_public_key: Maybe<ZswapCoinPublicKey>; // Player 2 public key
 export ledger p2_word_hash: Bytes<32>;                  // Player 2 word commitment
 export ledger p2_guess_count: Counter;                 // Number of guesses made
+export ledger p2_last_guess_result: Maybe<GuessResult>; // Result of last guess
 
 // Private witness functions
 witness local_secret_key(): Bytes<32>;                  // Player's secret key for identity
@@ -130,16 +131,22 @@ export circuit turn_player1(guess: Word): [] {
   const me = public_key(sk);
   assert (p1.value == me, "You are not player 1");
   
+  // Clear previous result BEFORE making new guess
+  p1_last_guess_result = disclose(none<GuessResult>());
+  
   // Only verify P2's guess if P2 has actually made a guess
   verify_p2_guess();
   
+  // Check if game ended due to verification (P2 won or draw)
+  if (game_state != GAME_STATE.p1_guess_turn) {
+    return; // Game ended, don't continue
+  }
   
   current_guess = disclose(guess);
   p1_guess_count.increment(1);
   
   // Player 2 will verify this guess
   game_state = GAME_STATE.p2_guess_turn;
-  //last_guess_result = disclose(none<GuessResult>());
 }
 
 // Player 2 verifies Player 1's guess
@@ -174,7 +181,7 @@ export circuit verify_p1_guess(): [] {
   
   // Evaluate Player 1's guess
   const result = disclose(evaluate_guess(word_struct, current_guess));
-  last_guess_result = disclose(some<GuessResult>(result));
+  p1_last_guess_result = disclose(some<GuessResult>(result));
   
   // Check if Player 1 won
   if (disclose(result.first_letter_result) == 2 && disclose(result.second_letter_result) == 2 && 
@@ -205,13 +212,20 @@ export circuit turn_player2(guess: Word): [] {
   const me = public_key(sk);
   assert (p2.value == me, "You are not player 2");
   
+  // Clear previous result BEFORE making new guess
+  p2_last_guess_result = disclose(none<GuessResult>());
+  
   // Always verify P1's guess since P2 only plays after P1 has made at least one guess
   verify_p1_guess();
+  
+  // Check if game ended due to verification (P1 won or draw)
+  if (game_state != GAME_STATE.p2_guess_turn) {
+    return; // Game ended, don't continue
+  }
   
   current_guess = disclose(guess);
   p2_guess_count.increment(1);
   
-  //last_guess_result = disclose(none<GuessResult>());
   game_state = GAME_STATE.p1_guess_turn;
 }
 
@@ -245,7 +259,7 @@ export circuit verify_p2_guess(): [] {
   };
   
   const result = disclose(evaluate_guess(word_struct, current_guess));
-  last_guess_result = disclose(some<GuessResult>(result));
+  p2_last_guess_result = disclose(some<GuessResult>(result));
   
   // Check if Player 2 won
   if (disclose(result.first_letter_result) == 2 && disclose(result.second_letter_result) == 2 &&

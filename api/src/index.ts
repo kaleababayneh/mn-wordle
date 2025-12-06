@@ -110,13 +110,15 @@ export class WordleAPI implements DeployedWordleAPI {
         return {
           gameState: ledgerState.game_state as GameState,
           currentGuess: ledgerState.current_guess,
-          lastGuessResult: ledgerState.last_guess_result.is_some ? ledgerState.last_guess_result.value : null,
+          lastGuessResult: null, // Deprecated - use p1LastGuessResult and p2LastGuessResult instead
           
           p1: ledgerState.p1.is_some ? ledgerState.p1.value : null,
           p1GuessCount: ledgerState.p1_guess_count,
+          p1LastGuessResult: ledgerState.p1_last_guess_result.is_some ? ledgerState.p1_last_guess_result.value : null,
           
           p2: ledgerState.p2.is_some ? ledgerState.p2.value : null,
           p2GuessCount: ledgerState.p2_guess_count,
+          p2LastGuessResult: ledgerState.p2_last_guess_result.is_some ? ledgerState.p2_last_guess_result.value : null,
           
           isPlayer1,
           isPlayer2,
