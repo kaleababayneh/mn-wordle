@@ -16,7 +16,7 @@ import {
 import { type BBoardPrivateState, createBBoardPrivateState, witnesses } from '../../contract/src/index';
 import * as utils from './utils/index.js';
 import { deployContract, findDeployedContract } from '@midnight-ntwrk/midnight-js-contracts';
-import { combineLatest, map, tap, from, type Observable, firstValueFrom, BehaviorSubject, switchMap } from 'rxjs';
+import { combineLatest, map, tap, from, type Observable, firstValueFrom, BehaviorSubject, switchMap, take } from 'rxjs';
 import { toHex } from '@midnight-ntwrk/midnight-js-utils';
 
 /** @internal */
@@ -44,6 +44,11 @@ export interface DeployedWordleAPI {
   stringToWord: (word: string) => Word;
   wordToString: (word: Word) => string;
   clearPrivateState: () => Promise<void>;
+
+  // New helper methods for competitive display
+  getPlayerGuesses: (player: 'player1' | 'player2') => Promise<Array<{word: string, result: number[] | null}>>;
+  getOpponentGuesses: () => Promise<Array<{word: string, result: number[] | null}>>;
+  getMyGuesses: () => Promise<Array<{word: string, result: number[] | null}>>;
 }
 
 /**
@@ -91,8 +96,20 @@ export class WordleAPI implements DeployedWordleAPI {
       (ledgerState, privateState) => {
         const playerIdentity = pureCircuits.public_key(privateState.secretKey);
 
+        // Debug logging for player detection
+        console.log('=== PLAYER DETECTION DEBUG ===');
+        console.log('Player identity (from private key):', toHex(playerIdentity));
+        console.log('P1 from contract:', ledgerState.p1.is_some ? toHex(ledgerState.p1.value) : 'none');
+        console.log('P2 from contract:', ledgerState.p2.is_some ? toHex(ledgerState.p2.value) : 'none');
+
         const isPlayer1 = ledgerState.p1.is_some && toHex(ledgerState.p1.value) === toHex(playerIdentity);
         const isPlayer2 = ledgerState.p2.is_some && toHex(ledgerState.p2.value) === toHex(playerIdentity);
+        
+        console.log('Is Player 1:', isPlayer1);
+        console.log('Is Player 2:', isPlayer2);
+        console.log('P1 Results:', ledgerState.p1_results);
+        console.log('P2 Results:', ledgerState.p2_results);
+        console.log('==============================');
         
         let playerRole: 'player1' | 'player2' | 'spectator' = 'spectator';
         if (isPlayer1) playerRole = 'player1';
@@ -115,10 +132,12 @@ export class WordleAPI implements DeployedWordleAPI {
           p1: ledgerState.p1.is_some ? ledgerState.p1.value : null,
           p1GuessCount: ledgerState.p1_guess_count,
           p1LastGuessResult: ledgerState.p1_last_guess_result.is_some ? ledgerState.p1_last_guess_result.value : null,
+          p1Results: ledgerState.p1_results, // NEW: Full P1 results array
           
           p2: ledgerState.p2.is_some ? ledgerState.p2.value : null,
           p2GuessCount: ledgerState.p2_guess_count,
           p2LastGuessResult: ledgerState.p2_last_guess_result.is_some ? ledgerState.p2_last_guess_result.value : null,
+          p2Results: ledgerState.p2_results, // NEW: Full P2 results array
           
           isPlayer1,
           isPlayer2,
@@ -581,6 +600,226 @@ export class WordleAPI implements DeployedWordleAPI {
     console.log(`Saved private state to localStorage for contract ${contractSuffix}`);
     
     return newState;
+  }
+
+  /**
+   * Get the current state synchronously (latest value from state$).
+   * 
+   * @returns The current derived state or null if not available
+   */
+  private getCurrentState(): WordleDerivedState | null {
+    try {
+      // Get the latest emitted value from the observable
+      let currentState: WordleDerivedState | null = null;
+      const subscription = this.state$.pipe(take(1)).subscribe(state => currentState = state as WordleDerivedState);
+      subscription.unsubscribe();
+      return currentState;
+    } catch (error) {
+      this.logger?.error('Failed to get current state');
+      return null;
+    }
+  }
+
+  /**
+   * Get all guesses and results for a specific player.
+   * 
+   * @param player Which player's guesses to retrieve ('player1' or 'player2')
+   * @returns Array of {word: string, result: number[] | null} objects
+   */
+  async getPlayerGuesses(player: 'player1' | 'player2'): Promise<Array<{word: string, result: number[] | null}>> {
+    const currentState = this.getCurrentState();
+    console.log(`=== getPlayerGuesses(${player}) DEBUG ===`);
+    console.log('getCurrentState() returned:', currentState);
+    
+    if (!currentState) {
+      console.log(`getPlayerGuesses(${player}): No current state available`);
+      
+      // Try alternative: access ledger state directly like in makeGuess method
+      try {
+        console.log('Attempting direct ledger state access...');
+        const ledgerStateObservable = this.providers.publicDataProvider.contractStateObservable(this.deployedContractAddress, { type: 'latest' });
+        
+        // Use async pattern like makeGuess method
+        const ledgerState = await firstValueFrom(ledgerStateObservable);
+        console.log('Got ledger state directly:', !!ledgerState?.data);
+        
+        if (ledgerState && ledgerState.data) {
+          const ledgerData = ledger(ledgerState.data);
+          console.log('Processed ledger data:', !!ledgerData);
+          
+          const playerResults = player === 'player1' ? ledgerData.p1_results : ledgerData.p2_results;
+          const guessCount = player === 'player1' ? ledgerData.p1_guess_count : ledgerData.p2_guess_count;
+          
+          console.log(`Direct ledger - Player results:`, playerResults);
+          console.log(`Direct ledger - Guess count:`, guessCount);
+          
+          if (playerResults && guessCount > 0) {
+            const guesses = [];
+            for (let i = 0; i < Number(guessCount); i++) {
+              const word = this.wordToString(playerResults.guess_words[i]);
+              const result = playerResults.guess_results[i];
+              
+              const resultArray = result && (
+                result.first_letter_result || result.second_letter_result || 
+                result.third_letter_result || result.fourth_letter_result || 
+                result.fifth_letter_result
+              ) ? [
+                Number(result.first_letter_result),
+                Number(result.second_letter_result), 
+                Number(result.third_letter_result),
+                Number(result.fourth_letter_result),
+                Number(result.fifth_letter_result)
+              ] : null;
+              
+              guesses.push({ word, result: resultArray });
+            }
+            console.log(`Direct ledger result for ${player}:`, guesses);
+            return guesses;
+          }
+        }
+      } catch (error) {
+        console.log('Direct ledger access failed:', error);
+      }
+      
+      return [];
+    }
+    
+    const playerResults = player === 'player1' ? currentState.p1Results : currentState.p2Results;
+    const guessCount = player === 'player1' ? currentState.p1GuessCount : currentState.p2GuessCount;
+    
+    console.log(`Player results object:`, playerResults);
+    console.log(`Guess count:`, guessCount);
+    console.log(`Guess count as number:`, Number(guessCount));
+    
+    if (!playerResults) {
+      console.log(`No player results available for ${player}`);
+      return [];
+    }
+    
+    console.log(`Player results guess_words array:`, playerResults?.guess_words);
+    console.log(`Player results guess_results array:`, playerResults?.guess_results);
+    
+    const guesses = [];
+    for (let i = 0; i < Number(guessCount); i++) {
+      console.log(`Processing guess ${i}:`);
+      const word = this.wordToString(playerResults.guess_words[i]);
+      const result = playerResults.guess_results[i];
+      console.log(`  Raw word array:`, playerResults.guess_words[i]);
+      console.log(`  Converted word:`, word);
+      console.log(`  Result:`, result);
+      
+      // Convert GuessResult to array of numbers, or null if it's empty/default
+      const resultArray = result && (
+        result.first_letter_result || result.second_letter_result || 
+        result.third_letter_result || result.fourth_letter_result || 
+        result.fifth_letter_result
+      ) ? [
+        Number(result.first_letter_result),
+        Number(result.second_letter_result), 
+        Number(result.third_letter_result),
+        Number(result.fourth_letter_result),
+        Number(result.fifth_letter_result)
+      ] : null;
+      
+      console.log(`  Result array:`, resultArray);
+      guesses.push({ word, result: resultArray });
+    }
+    
+    console.log(`Final guesses for ${player}:`, guesses);
+    console.log(`=== END getPlayerGuesses(${player}) ===`);
+    return guesses;
+  }
+
+  /**
+   * Get all opponent guesses visible to the current player.
+   * 
+   * @returns Array of {word: string, result: number[] | null} objects for opponent
+   */
+  async getOpponentGuesses(): Promise<Array<{word: string, result: number[] | null}>> {
+    const currentState = this.getCurrentState();
+    
+    if (currentState) {
+      // Use current state if available
+      if (currentState.isPlayer1) {
+        return await this.getPlayerGuesses('player2');
+      } else if (currentState.isPlayer2) {
+        return await this.getPlayerGuesses('player1');
+      }
+    } else {
+      // Fallback: determine player identity using direct ledger access
+      try {
+        console.log('getOpponentGuesses: Using direct ledger access to determine player identity');
+        const ledgerStateObservable = this.providers.publicDataProvider.contractStateObservable(this.deployedContractAddress, { type: 'latest' });
+        const ledgerState = await firstValueFrom(ledgerStateObservable);
+        
+        if (ledgerState?.data) {
+          const privateState = await this.providers.privateStateProvider.get(bboardPrivateStateKey) as BBoardPrivateState;
+          const playerIdentity = pureCircuits.public_key(privateState.secretKey);
+          const ledgerData = ledger(ledgerState.data);
+          
+          const isPlayer1 = ledgerData.p1.is_some && toHex(ledgerData.p1.value) === toHex(playerIdentity);
+          const isPlayer2 = ledgerData.p2.is_some && toHex(ledgerData.p2.value) === toHex(playerIdentity);
+          
+          console.log(`getOpponentGuesses: Direct access - isPlayer1: ${isPlayer1}, isPlayer2: ${isPlayer2}`);
+          
+          if (isPlayer1) {
+            return await this.getPlayerGuesses('player2');
+          } else if (isPlayer2) {
+            return await this.getPlayerGuesses('player1');
+          }
+        }
+      } catch (error) {
+        console.log('getOpponentGuesses: Direct access failed:', error);
+      }
+    }
+    
+    return [];
+  }
+
+  /**
+   * Get own guesses for the current player.
+   * 
+   * @returns Array of {word: string, result: number[] | null} objects for current player
+   */
+  async getMyGuesses(): Promise<Array<{word: string, result: number[] | null}>> {
+    const currentState = this.getCurrentState();
+    
+    if (currentState) {
+      // Use current state if available
+      if (currentState.isPlayer1) {
+        return await this.getPlayerGuesses('player1');
+      } else if (currentState.isPlayer2) {
+        return await this.getPlayerGuesses('player2');
+      }
+    } else {
+      // Fallback: determine player identity using direct ledger access
+      try {
+        console.log('getMyGuesses: Using direct ledger access to determine player identity');
+        const ledgerStateObservable = this.providers.publicDataProvider.contractStateObservable(this.deployedContractAddress, { type: 'latest' });
+        const ledgerState = await firstValueFrom(ledgerStateObservable);
+        
+        if (ledgerState?.data) {
+          const privateState = await this.providers.privateStateProvider.get(bboardPrivateStateKey) as BBoardPrivateState;
+          const playerIdentity = pureCircuits.public_key(privateState.secretKey);
+          const ledgerData = ledger(ledgerState.data);
+          
+          const isPlayer1 = ledgerData.p1.is_some && toHex(ledgerData.p1.value) === toHex(playerIdentity);
+          const isPlayer2 = ledgerData.p2.is_some && toHex(ledgerData.p2.value) === toHex(playerIdentity);
+          
+          console.log(`getMyGuesses: Direct access - isPlayer1: ${isPlayer1}, isPlayer2: ${isPlayer2}`);
+          
+          if (isPlayer1) {
+            return await this.getPlayerGuesses('player1');
+          } else if (isPlayer2) {
+            return await this.getPlayerGuesses('player2');
+          }
+        }
+      } catch (error) {
+        console.log('getMyGuesses: Direct access failed:', error);
+      }
+    }
+    
+    return [];
   }
 }
 

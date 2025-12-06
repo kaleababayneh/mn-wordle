@@ -29,6 +29,10 @@ enum GAME_STATE {
   draw
 }
 
+export struct PlayerResult {
+  guess_words : Vector<6, Word>;
+  guess_results : Vector<6, GuessResult>;
+}
 // Game state management
 export ledger game_state: GAME_STATE;
 export ledger current_guess: Word;                    // Current guess being made
@@ -39,6 +43,7 @@ export ledger p1_public_key: Maybe<ZswapCoinPublicKey>; // Player 1 public key
 export ledger p1_word_hash: Bytes<32>;                  // Player 1 word commitment
 export ledger p1_guess_count: Counter;       // Number of guesses made
 export ledger p1_last_guess_result: Maybe<GuessResult>; // Result of last guess
+export ledger p1_results: PlayerResult;          // Player 1's guesses and results
 
 // Player 2 state  
 export ledger p2: Maybe<Bytes<32>>;                     // Player 2 identity hash
@@ -46,7 +51,7 @@ export ledger p2_public_key: Maybe<ZswapCoinPublicKey>; // Player 2 public key
 export ledger p2_word_hash: Bytes<32>;                  // Player 2 word commitment
 export ledger p2_guess_count: Counter;                 // Number of guesses made
 export ledger p2_last_guess_result: Maybe<GuessResult>; // Result of last guess
-
+export ledger p2_results: PlayerResult;          // Player 2's guesses and results
 // Private witness functions
 witness local_secret_key(): Bytes<32>;                  // Player's secret key for identity
 witness player_word(): Vector<5, Uint<8>>;              // Player's secret word
@@ -61,6 +66,17 @@ constructor() {
   game_state = GAME_STATE.waiting_p1;
   p1_guess_count.resetToDefault();
   p2_guess_count.resetToDefault();
+  
+  // Initialize player results with empty data
+  const emptyWord = default<Word>;
+  const emptyResult = default<GuessResult>;
+
+  const words: Vector<6, Word> = [emptyWord, emptyWord, emptyWord, emptyWord, emptyWord, emptyWord];
+  const results: Vector<6, GuessResult> = [emptyResult, emptyResult, emptyResult, emptyResult, emptyResult, emptyResult];
+
+  p1_results = PlayerResult { guess_words: words, guess_results: results };
+  p2_results = PlayerResult { guess_words: words, guess_results: results };
+  
   // Initialize with non-English characters that won't match any real word
   // Using characters like '@', '#', '$', '%', '&' (ASCII 64, 35, 36, 37, 38)
   current_guess = disclose(Word {
@@ -131,8 +147,29 @@ export circuit turn_player1(guess: Word): [] {
   const me = public_key(sk);
   assert (p1.value == me, "You are not player 1");
   
+  // Store Player 1's guess BEFORE verification (use current count as index)
+  const guess_index = p1_guess_count.read();
+  
+  // Manually update the specific index in the vector
+  const current_words = p1_results.guess_words;
+  const new_words = [
+    (guess_index == (0 as Uint<64>)) ? disclose(guess) : current_words[0],
+    (guess_index == (1 as Uint<64>)) ? disclose(guess) : current_words[1], 
+    (guess_index == (2 as Uint<64>)) ? disclose(guess) : current_words[2],
+    (guess_index == (3 as Uint<64>)) ? disclose(guess) : current_words[3],
+    (guess_index == (4 as Uint<64>)) ? disclose(guess) : current_words[4],
+    (guess_index == (5 as Uint<64>)) ? disclose(guess) : current_words[5]
+  ];
+  p1_results = disclose(PlayerResult { 
+    guess_words: new_words, 
+    guess_results: p1_results.guess_results 
+  });
+  
   // Clear previous result BEFORE making new guess
   p1_last_guess_result = disclose(none<GuessResult>());
+  
+  current_guess = disclose(guess);
+  p1_guess_count.increment(1);
   
   // Only verify P2's guess if P2 has actually made a guess
   verify_p2_guess();
@@ -142,14 +179,12 @@ export circuit turn_player1(guess: Word): [] {
     return; // Game ended, don't continue
   }
   
-  current_guess = disclose(guess);
-  p1_guess_count.increment(1);
-  
   // Player 2 will verify this guess
   game_state = GAME_STATE.p2_guess_turn;
 }
 
 // Player 2 verifies Player 1's guess
+
 export circuit verify_p1_guess(): [] {
   assert (game_state == GAME_STATE.p2_guess_turn, "Not player 2's verify turn");
   
@@ -182,6 +217,25 @@ export circuit verify_p1_guess(): [] {
   // Evaluate Player 1's guess
   const result = disclose(evaluate_guess(word_struct, current_guess));
   p1_last_guess_result = disclose(some<GuessResult>(result));
+
+  // Store only the result (using count-1 since count was already incremented)
+  const guess_index = (p1_guess_count.read() - (1 as Uint<64>)) as Uint<64>;
+  
+  // Manually update the specific index in the vector
+  const current_results = p1_results.guess_results;
+  const new_results = [
+    (guess_index == (0 as Uint<64>)) ? result : current_results[0],
+    (guess_index == (1 as Uint<64>)) ? result : current_results[1], 
+    (guess_index == (2 as Uint<64>)) ? result : current_results[2],
+    (guess_index == (3 as Uint<64>)) ? result : current_results[3],
+    (guess_index == (4 as Uint<64>)) ? result : current_results[4],
+    (guess_index == (5 as Uint<64>)) ? result : current_results[5]
+  ];
+  p1_results = disclose(PlayerResult { 
+    guess_words: p1_results.guess_words, 
+    guess_results: new_results 
+  });
+
   
   // Check if Player 1 won
   if (disclose(result.first_letter_result) == 2 && disclose(result.second_letter_result) == 2 && 
@@ -212,8 +266,29 @@ export circuit turn_player2(guess: Word): [] {
   const me = public_key(sk);
   assert (p2.value == me, "You are not player 2");
   
+  // Store Player 2's guess BEFORE verification (use current count as index)
+  const guess_index = p2_guess_count.read();
+  
+  // Manually update the specific index in the vector
+  const current_words = p2_results.guess_words;
+  const new_words = [
+    (guess_index == (0 as Uint<64>)) ? disclose(guess) : current_words[0],
+    (guess_index == (1 as Uint<64>)) ? disclose(guess) : current_words[1], 
+    (guess_index == (2 as Uint<64>)) ? disclose(guess) : current_words[2],
+    (guess_index == (3 as Uint<64>)) ? disclose(guess) : current_words[3],
+    (guess_index == (4 as Uint<64>)) ? disclose(guess) : current_words[4],
+    (guess_index == (5 as Uint<64>)) ? disclose(guess) : current_words[5]
+  ];
+  p2_results = disclose(PlayerResult { 
+    guess_words: new_words, 
+    guess_results: p2_results.guess_results 
+  });
+  
   // Clear previous result BEFORE making new guess
   p2_last_guess_result = disclose(none<GuessResult>());
+  
+  current_guess = disclose(guess);
+  p2_guess_count.increment(1);
   
   // Always verify P1's guess since P2 only plays after P1 has made at least one guess
   verify_p1_guess();
@@ -223,15 +298,15 @@ export circuit turn_player2(guess: Word): [] {
     return; // Game ended, don't continue
   }
   
-  current_guess = disclose(guess);
-  p2_guess_count.increment(1);
-  
   game_state = GAME_STATE.p1_guess_turn;
 }
 
 // Player 1 verifies Player 2's guess
 export circuit verify_p2_guess(): [] {
-  assert (game_state == GAME_STATE.p1_guess_turn, "Not player 1's verify turn");
+  // If Player 2 hasn't made any guesses yet, nothing to verify
+  if (p2_guess_count.read() == (0 as Uint<64>)) {
+    return;
+  }
   
   const sk = local_secret_key();
   const secret_key = persistentHash<Vector<2, Bytes<32>>>([sk, kernel.self().bytes]);
@@ -260,6 +335,24 @@ export circuit verify_p2_guess(): [] {
   
   const result = disclose(evaluate_guess(word_struct, current_guess));
   p2_last_guess_result = disclose(some<GuessResult>(result));
+
+  // Store only the result (using count-1 since count was already incremented)
+  const guess_index = (p2_guess_count.read() - (1 as Uint<64>)) as Uint<64>;
+  
+  // Manually update the specific index in the vector
+  const current_results = p2_results.guess_results;
+  const new_results = [
+    (guess_index == (0 as Uint<64>)) ? result : current_results[0],
+    (guess_index == (1 as Uint<64>)) ? result : current_results[1], 
+    (guess_index == (2 as Uint<64>)) ? result : current_results[2],
+    (guess_index == (3 as Uint<64>)) ? result : current_results[3],
+    (guess_index == (4 as Uint<64>)) ? result : current_results[4],
+    (guess_index == (5 as Uint<64>)) ? result : current_results[5]
+  ];
+  p2_results = disclose(PlayerResult { 
+    guess_words: p2_results.guess_words, 
+    guess_results: new_results 
+  });
   
   // Check if Player 2 won
   if (disclose(result.first_letter_result) == 2 && disclose(result.second_letter_result) == 2 &&

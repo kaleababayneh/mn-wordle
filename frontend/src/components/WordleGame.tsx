@@ -82,19 +82,20 @@ const WordleBoard: React.FC<WordleBoardProps> = ({
   currentWord, 
   isActive, 
   playerName,
-  maxGuesses = 6 
+  maxGuesses = 6
 }) => {
   const renderRow = (rowIndex: number) => {
     const guess = guesses[rowIndex];
     const isCurrentRow = rowIndex === guesses.length && isActive;
+    
     const word = isCurrentRow ? currentWord : (guess?.word || '');
     const result = guess?.result;
 
-    const letters = word.padEnd(5, ' ').split('').slice(0, 5);
+    const displayWord = word.padEnd(5, ' ').split('').slice(0, 5);
 
     return (
       <Box key={rowIndex} sx={{ display: 'flex', gap: 1, justifyContent: 'center', mb: 1 }}>
-        {letters.map((letter, letterIndex) => {
+        {displayWord.map((letter, letterIndex) => {
           let status: 'empty' | 'filled' | 'correct' | 'present' | 'absent' = 'empty';
           
           if (letter !== ' ') {
@@ -115,7 +116,7 @@ const WordleBoard: React.FC<WordleBoardProps> = ({
           return (
             <LetterTile
               key={letterIndex}
-              letter={letter}
+              letter={letter === '.' ? '•' : letter}
               status={status}
               isActive={isCurrentRow}
             />
@@ -159,8 +160,8 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
   const [playerWord, setPlayerWord] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [p1Guesses, setP1Guesses] = useState<Array<{word: string, result?: Array<number>}>>([]);
-  const [p2Guesses, setP2Guesses] = useState<Array<{word: string, result?: Array<number>}>>([]);
+  const [myGuesses, setMyGuesses] = useState<Array<{word: string, result?: Array<number>}>>([]);
+  const [opponentGuesses, setOpponentGuesses] = useState<Array<{word: string, result?: Array<number>}>>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const canJoinAsPlayer1 = state?.gameState === GameState.WAITING_P1;
@@ -174,66 +175,70 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
     (state.isPlayer2 && state.gameState === GameState.P2_GUESS_TURN)
   );
 
-  // Update guess history when state changes - use separate P1 and P2 guess results
+  // Update guess arrays using the new API helper methods
   useEffect(() => {
-    if (!api) return;
+    if (!api || !state) return;
 
-    // Update Player 1 guess results
-    if (state?.p1LastGuessResult) {
-      const result = [
-        Number(state.p1LastGuessResult.first_letter_result),
-        Number(state.p1LastGuessResult.second_letter_result),
-        Number(state.p1LastGuessResult.third_letter_result),
-        Number(state.p1LastGuessResult.fourth_letter_result),
-        Number(state.p1LastGuessResult.fifth_letter_result),
-      ];
+    const loadGuesses = async () => {
+      try {
+        // Get structured guess data from the API
+        const myCurrentGuesses = await api.getMyGuesses();
+        const opponentCurrentGuesses = await api.getOpponentGuesses();
 
-      // Only update if not all zeros (meaning there's a real result)
-      const hasResult = !result.every(r => r === 0);
-      
-      if (hasResult) {
-        console.log('Updating P1 guess result:', result);
-        setP1Guesses(prev => {
-          // Find the last uncolored guess and update it
-          const lastUncoloredIndex = prev.findLastIndex(guess => !guess.result);
-          console.log('P1 last uncolored index:', lastUncoloredIndex, 'prev:', prev);
-          if (lastUncoloredIndex !== -1) {
-            return prev.map((g, i) => i === lastUncoloredIndex ? { ...g, result } : g);
-          }
-          return prev;
-        });
+        console.log('=== API GUESS DATA ===');
+        console.log('My guesses from API:', myCurrentGuesses);
+        console.log('Opponent guesses from API:', opponentCurrentGuesses);
+        
+        // Additional debugging: test direct access to getPlayerGuesses
+        console.log('=== DIRECT API ACCESS TEST ===');
+        try {
+          const p1Guesses = await api.getPlayerGuesses('player1');
+          const p2Guesses = await api.getPlayerGuesses('player2');
+          console.log('Direct P1 guesses:', p1Guesses);
+          console.log('Direct P2 guesses:', p2Guesses);
+        } catch (error) {
+          console.error('Error calling getPlayerGuesses directly:', error);
+        }
+        console.log('=== END API TEST ===');
+
+        // Update state with structured data from API
+        setMyGuesses(myCurrentGuesses.map(g => ({
+          word: g.word,
+          result: g.result || undefined // Convert null to undefined for type compatibility
+        })));
+
+        setOpponentGuesses(opponentCurrentGuesses.map(g => ({
+          word: g.word,
+          result: g.result || undefined // Convert null to undefined for type compatibility
+        })));
+      } catch (error) {
+        console.error('Error loading guesses:', error);
+        // Fallback to empty arrays if API methods fail
+        setMyGuesses([]);
+        setOpponentGuesses([]);
       }
+    };
+
+    loadGuesses();
+  }, [api, state?.p1GuessCount, state?.p2GuessCount, state?.p1Results, state?.p2Results]);
+
+  // Debug: Log state changes
+  useEffect(() => {
+    if (state && api) {
+      console.log('=== STATE DEBUG ===');
+      console.log('Game state:', state.gameState);
+      console.log('Current guess from contract:', state.currentGuess ? api.wordToString(state.currentGuess) : 'null');
+      console.log('P1 guess count:', state.p1GuessCount.toString());
+      console.log('P2 guess count:', state.p2GuessCount.toString());
+      console.log('My guesses array:', myGuesses);
+      console.log('Opponent guesses array:', opponentGuesses);
+      console.log('Is Player 1:', state.isPlayer1);
+      console.log('Is Player 2:', state.isPlayer2);
+      console.log('Current player can make guess:', canMakeGuess);
+      console.log('==================');
     }
+  }, [state, myGuesses, opponentGuesses, api, canMakeGuess]);
 
-    // Update Player 2 guess results
-    if (state?.p2LastGuessResult) {
-      const result = [
-        Number(state.p2LastGuessResult.first_letter_result),
-        Number(state.p2LastGuessResult.second_letter_result),
-        Number(state.p2LastGuessResult.third_letter_result),
-        Number(state.p2LastGuessResult.fourth_letter_result),
-        Number(state.p2LastGuessResult.fifth_letter_result),
-      ];
-
-      // Only update if not all zeros (meaning there's a real result)
-      const hasResult = !result.every(r => r === 0);
-      
-      if (hasResult) {
-        console.log('Updating P2 guess result:', result);
-        setP2Guesses(prev => {
-          // Find the last uncolored guess and update it
-          const lastUncoloredIndex = prev.findLastIndex(guess => !guess.result);
-          console.log('P2 last uncolored index:', lastUncoloredIndex, 'prev:', prev);
-          if (lastUncoloredIndex !== -1) {
-            return prev.map((g, i) => i === lastUncoloredIndex ? { ...g, result } : g);
-          }
-          return prev;
-        });
-      }
-    }
-  }, [state?.p1LastGuessResult, state?.p2LastGuessResult, api]);
-
-  // Handle keyboard input - simplified condition
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
       // Only handle keyboard input if this player can make a guess
@@ -368,39 +373,12 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
     setError(null);
 
     try {
-      // Add the current guess to the appropriate player's guess list immediately for UI feedback
-      if (state?.isPlayer1) {
-        setP1Guesses(prev => {
-          // Check if this word is already in the list to prevent duplicates
-          const wordExists = prev.some(guess => guess.word === currentGuess);
-          if (!wordExists) {
-            return [...prev, { word: currentGuess }];
-          }
-          return prev;
-        });
-      } else if (state?.isPlayer2) {
-        setP2Guesses(prev => {
-          // Check if this word is already in the list to prevent duplicates
-          const wordExists = prev.some(guess => guess.word === currentGuess);
-          if (!wordExists) {
-            return [...prev, { word: currentGuess }];
-          }
-          return prev;
-        });
-      }
-      
       console.log('Making guess with word:', currentGuess, 'length:', currentGuess.length, 'lowercase:', currentGuess.toLowerCase());
       // The contract now automatically handles verification during guess transactions
       await api.makeGuess(currentGuess.toLowerCase());
       setCurrentGuess('');
     } catch (err) {
       console.error('Make guess error:', err);
-      // If there was an error, remove the guess we just added
-      if (state?.isPlayer1) {
-        setP1Guesses(prev => prev.slice(0, -1));
-      } else if (state?.isPlayer2) {
-        setP2Guesses(prev => prev.slice(0, -1));
-      }
       
       const errorMessage = err instanceof Error ? err.message : 'Failed to make guess';
       console.error('Error details:', errorMessage);
@@ -542,213 +520,189 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
         </CardContent>
       </Card>
 
-      {/* Game Boards - ONE BOARD PER SCREEN ONLY */}
+      {/* Game Boards - Show both player's boards for competitive feel */}
       {showGameBoards && state && (
-        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', maxWidth: 500, margin: 'auto' }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', maxWidth: 900, margin: 'auto' }}>
           
-          {/* Determine which single board to show */}
+          {/* Determine which player's view this is */}
           {(() => {
-            // Show Player 1's board only if they are Player 1 and not Player 2
+            // Show Player 1's view: P1 board active, P2 board as opponent
             if (state.isPlayer1 === true && state.isPlayer2 !== true) {
               return (
                 <Box sx={{ width: '100%' }}>
-                  <Typography variant="h4" align="center" sx={{ mb: 3, color: '#4caf50' }}>
-                    🟩 Player 1 Board (You)
-                  </Typography>
-                  
-                  <WordleBoard
-                    guesses={p1Guesses}
-                    currentWord={canMakeGuess ? currentGuess : ''}
-                    isActive={!!canMakeGuess}
-                    playerName=""
-                  />
-                  
-                  {/* Player 1 Actions - Show input when it's P1's turn */}
-                  {canMakeGuess && (
-                    <Box sx={{ mt: 3, p: 3, backgroundColor: '#e8f5e8', borderRadius: 2, border: '2px solid #4caf50' }}>
-                      <Typography variant="h6" gutterBottom sx={{ color: '#2e7d32' }}>
-                        🎯 Your Turn! Type your guess (5 letters)
-                      </Typography>
-                      <TextField
-                        inputRef={inputRef}
-                        label="Player 1 guess (5 letters)"
-                        value={currentGuess}
-                        onChange={(e) => {
-                          const value = e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 5);
-                          setCurrentGuess(value);
-                        }}
-                        sx={{ mb: 2, width: 300 }}
-                        inputProps={{ 
-                          maxLength: 5, 
-                          style: { textAlign: 'center', fontSize: '1.5rem', letterSpacing: '0.2em' } 
-                        }}
-                        autoFocus
-                      />
-                      <br />
-                      <Button
-                        variant="contained"
-                        onClick={handleMakeGuess}
-                        disabled={isSubmitting || currentGuess.length !== 5}
-                        size="large"
-                        sx={{ backgroundColor: '#4caf50', '&:hover': { backgroundColor: '#388e3c' } }}
-                      >
-                        {isSubmitting ? 'Submitting...' : 'Submit P1 Guess'}
-                      </Button>
-                      <Typography variant="body2" sx={{ mt: 1, color: '#666' }}>
-                        This will automatically verify Player 2's previous guess (if any) and make your guess
-                      </Typography>
-                    </Box>
-                  )}
-                  
-                  {!canMakeGuess && (
-                    <Box sx={{ mt: 3, p: 3, backgroundColor: '#f5f5f5', borderRadius: 2 }}>
-                      <Typography variant="h6" gutterBottom sx={{ color: '#666' }}>
-                        ⏳ Waiting for Player 2...
-                      </Typography>
-                      <Typography variant="body2" color="textSecondary">
-                        {state.gameState === GameState.P2_GUESS_TURN && "Player 2 is making their guess"}
-                      </Typography>
-                    </Box>
-                  )}
-
-                  {/* Player 2 Progress Summary for Player 1 */}
-                  <Box sx={{ mt: 3, p: 2, backgroundColor: '#f0f0f0', borderRadius: 2 }}>
-                    <Typography variant="h6" align="center" sx={{ mb: 2, color: '#1976d2' }}>
-                      🟦 Player 2's Progress
+                  {/* Player 1's Active Board */}
+                  <Box sx={{ mb: 4 }}>
+                    <Typography variant="h4" align="center" sx={{ mb: 3, color: '#4caf50' }}>
+                      🟩 Your Board (Player 1)
                     </Typography>
-                    <Typography variant="body2" align="center" sx={{ mb: 1 }}>
-                      Guesses: {state.p2GuessCount.toString()}/6
-                    </Typography>
-                    {p2Guesses.length > 0 ? (
-                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, alignItems: 'center' }}>
-                        {p2Guesses.slice(-2).map((guess, index) => (
-                          <Box key={index} sx={{ display: 'flex', gap: 0.5 }}>
-                            {guess.word.split('').map((letter, letterIndex) => (
-                              <Box
-                                key={letterIndex}
-                                sx={{
-                                  width: 25, height: 25,
-                                  backgroundColor: guess.result ? 
-                                    (guess.result[letterIndex] === 2 ? '#4caf50' : 
-                                     guess.result[letterIndex] === 1 ? '#ff9800' : '#757575') : '#424242',
-                                  color: 'white', display: 'flex', alignItems: 'center',
-                                  justifyContent: 'center', fontSize: '0.7rem', borderRadius: 0.5,
-                                }}
-                              >
-                                {letter}
-                              </Box>
-                            ))}
-                          </Box>
-                        ))}
+                    
+                    <WordleBoard
+                      guesses={state.isPlayer1 ? myGuesses : []} // Show my own guesses when I'm player 1
+                      currentWord={canMakeGuess ? currentGuess : ''}
+                      isActive={!!canMakeGuess}
+                      playerName=""
+                    />
+                    
+                    {/* Player 1 Actions */}
+                    {canMakeGuess && (
+                      <Box sx={{ mt: 3, p: 3, backgroundColor: '#e8f5e8', borderRadius: 2, border: '2px solid #4caf50' }}>
+                        <Typography variant="h6" gutterBottom sx={{ color: '#2e7d32' }}>
+                          🎯 Your Turn! Type your guess (5 letters)
+                        </Typography>
+                        <TextField
+                          inputRef={inputRef}
+                          label="Player 1 guess (5 letters)"
+                          value={currentGuess}
+                          onChange={(e) => {
+                            const value = e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 5);
+                            setCurrentGuess(value);
+                          }}
+                          sx={{ mb: 2, width: 300 }}
+                          inputProps={{ 
+                            maxLength: 5, 
+                            style: { textAlign: 'center', fontSize: '1.5rem', letterSpacing: '0.2em' } 
+                          }}
+                          autoFocus
+                        />
+                        <br />
+                        <Button
+                          variant="contained"
+                          onClick={handleMakeGuess}
+                          disabled={isSubmitting || currentGuess.length !== 5}
+                          size="large"
+                          sx={{ backgroundColor: '#4caf50', '&:hover': { backgroundColor: '#388e3c' } }}
+                        >
+                          {isSubmitting ? 'Submitting...' : 'Submit P1 Guess'}
+                        </Button>
+                        <Typography variant="body2" sx={{ mt: 1, color: '#666' }}>
+                          This will automatically verify Player 2's previous guess (if any) and make your guess
+                        </Typography>
                       </Box>
-                    ) : (
-                      <Typography variant="body2" color="textSecondary" align="center">
-                        Player 2 hasn't made any guesses yet
-                      </Typography>
                     )}
+                    
+                    {!canMakeGuess && (
+                      <Box sx={{ mt: 3, p: 3, backgroundColor: '#f5f5f5', borderRadius: 2 }}>
+                        <Typography variant="h6" gutterBottom sx={{ color: '#666' }}>
+                          ⏳ Waiting for Player 2...
+                        </Typography>
+                        <Typography variant="body2" color="textSecondary">
+                          {state.gameState === GameState.P2_GUESS_TURN && "Player 2 is making their guess"}
+                        </Typography>
+                      </Box>
+                    )}
+                  </Box>
+
+                  {/* Player 2's Opponent Board (Read-only) */}
+                  <Box sx={{ mt: 4, opacity: 0.8 }}>
+                    <Typography variant="h5" align="center" sx={{ mb: 2, color: '#1976d2' }}>
+                      🟦 Opponent's Board (Player 2)
+                    </Typography>
+                    
+                    <WordleBoard
+                      guesses={opponentGuesses} // Show opponent's guesses (Player 2 when I'm Player 1)
+                      currentWord="" // Never show opponent's current typing
+                      isActive={false}
+                      playerName=""
+                    />
+                    
+                    <Box sx={{ mt: 2, p: 2, backgroundColor: '#f0f0f0', borderRadius: 2, textAlign: 'center' }}>
+                      <Typography variant="body2" sx={{ color: '#666' }}>
+                        Guesses: {state.p2GuessCount.toString()}/6 
+                        {state.gameState === GameState.P2_GUESS_TURN && " • Currently guessing..."}
+                        {state.gameState === GameState.P1_GUESS_TURN && " • Waiting for your move"}
+                      </Typography>
+                    </Box>
                   </Box>
                 </Box>
               );
             }
             
-            // Show Player 2's board only if they are Player 2 and not Player 1  
+            // Show Player 2's view: P2 board active, P1 board as opponent
             if (state.isPlayer2 === true && state.isPlayer1 !== true) {
               return (
                 <Box sx={{ width: '100%' }}>
-                  <Typography variant="h4" align="center" sx={{ mb: 3, color: '#2196f3' }}>
-                    🟦 Player 2 Board (You)
-                  </Typography>
-                  
-                  <WordleBoard
-                    guesses={p2Guesses}
-                    currentWord={canMakeGuess ? currentGuess : ''}
-                    isActive={!!canMakeGuess}
-                    playerName=""
-                  />
-                  
-                  {/* Player 2 Actions - Show input when it's P2's turn */}
-                  {canMakeGuess && (
-                    <Box sx={{ mt: 3, p: 3, backgroundColor: '#e3f2fd', borderRadius: 2, border: '2px solid #2196f3' }}>
-                      <Typography variant="h6" gutterBottom sx={{ color: '#1976d2' }}>
-                        🎯 Your Turn! Type your guess (5 letters)
-                      </Typography>
-                      <TextField
-                        inputRef={inputRef}
-                        label="Player 2 guess (5 letters)"
-                        value={currentGuess}
-                        onChange={(e) => {
-                          const value = e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 5);
-                          setCurrentGuess(value);
-                        }}
-                        sx={{ mb: 2, width: 300 }}
-                        inputProps={{ 
-                          maxLength: 5, 
-                          style: { textAlign: 'center', fontSize: '1.5rem', letterSpacing: '0.2em' } 
-                        }}
-                        autoFocus
-                      />
-                      <br />
-                      <Button
-                        variant="contained"
-                        onClick={handleMakeGuess}
-                        disabled={isSubmitting || currentGuess.length !== 5}
-                        size="large"
-                        sx={{ backgroundColor: '#2196f3', '&:hover': { backgroundColor: '#1976d2' } }}
-                      >
-                        {isSubmitting ? 'Submitting...' : 'Submit P2 Guess'}
-                      </Button>
-                      <Typography variant="body2" sx={{ mt: 1, color: '#666' }}>
-                        This will automatically verify Player 1's guess and make your guess
-                      </Typography>
-                    </Box>
-                  )}
-                  
-                  {!canMakeGuess && (
-                    <Box sx={{ mt: 3, p: 3, backgroundColor: '#f5f5f5', borderRadius: 2 }}>
-                      <Typography variant="h6" gutterBottom sx={{ color: '#666' }}>
-                        ⏳ Waiting for Player 1...
-                      </Typography>
-                      <Typography variant="body2" color="textSecondary">
-                        {state.gameState === GameState.P1_GUESS_TURN && "Player 1 is making their guess"}
-                      </Typography>
-                    </Box>
-                  )}
-
-                  {/* Player 1 Progress Summary for Player 2 */}
-                  <Box sx={{ mt: 3, p: 2, backgroundColor: '#f0f0f0', borderRadius: 2 }}>
-                    <Typography variant="h6" align="center" sx={{ mb: 2, color: '#4caf50' }}>
-                      🟩 Player 1's Progress
+                  {/* Player 2's Active Board */}
+                  <Box sx={{ mb: 4 }}>
+                    <Typography variant="h4" align="center" sx={{ mb: 3, color: '#2196f3' }}>
+                      🟦 Your Board (Player 2)
                     </Typography>
-                    <Typography variant="body2" align="center" sx={{ mb: 1 }}>
-                      Guesses: {state.p1GuessCount.toString()}/6
-                    </Typography>
-                    {p1Guesses.length > 0 ? (
-                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, alignItems: 'center' }}>
-                        {p1Guesses.slice(-2).map((guess, index) => (
-                          <Box key={index} sx={{ display: 'flex', gap: 0.5 }}>
-                            {guess.word.split('').map((letter, letterIndex) => (
-                              <Box
-                                key={letterIndex}
-                                sx={{
-                                  width: 25, height: 25,
-                                  backgroundColor: guess.result ? 
-                                    (guess.result[letterIndex] === 2 ? '#4caf50' : 
-                                     guess.result[letterIndex] === 1 ? '#ff9800' : '#757575') : '#424242',
-                                  color: 'white', display: 'flex', alignItems: 'center',
-                                  justifyContent: 'center', fontSize: '0.7rem', borderRadius: 0.5,
-                                }}
-                              >
-                                {letter}
-                              </Box>
-                            ))}
-                          </Box>
-                        ))}
+                    
+                    <WordleBoard
+                      guesses={state.isPlayer2 ? myGuesses : []} // Show my own guesses when I'm player 2
+                      currentWord={canMakeGuess ? currentGuess : ''}
+                      isActive={!!canMakeGuess}
+                      playerName=""
+                    />
+                    
+                    {/* Player 2 Actions */}
+                    {canMakeGuess && (
+                      <Box sx={{ mt: 3, p: 3, backgroundColor: '#e3f2fd', borderRadius: 2, border: '2px solid #2196f3' }}>
+                        <Typography variant="h6" gutterBottom sx={{ color: '#1976d2' }}>
+                          🎯 Your Turn! Type your guess (5 letters)
+                        </Typography>
+                        <TextField
+                          inputRef={inputRef}
+                          label="Player 2 guess (5 letters)"
+                          value={currentGuess}
+                          onChange={(e) => {
+                            const value = e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 5);
+                            setCurrentGuess(value);
+                          }}
+                          sx={{ mb: 2, width: 300 }}
+                          inputProps={{ 
+                            maxLength: 5, 
+                            style: { textAlign: 'center', fontSize: '1.5rem', letterSpacing: '0.2em' } 
+                          }}
+                          autoFocus
+                        />
+                        <br />
+                        <Button
+                          variant="contained"
+                          onClick={handleMakeGuess}
+                          disabled={isSubmitting || currentGuess.length !== 5}
+                          size="large"
+                          sx={{ backgroundColor: '#2196f3', '&:hover': { backgroundColor: '#1976d2' } }}
+                        >
+                          {isSubmitting ? 'Submitting...' : 'Submit P2 Guess'}
+                        </Button>
+                        <Typography variant="body2" sx={{ mt: 1, color: '#666' }}>
+                          This will automatically verify Player 1's guess and make your guess
+                        </Typography>
                       </Box>
-                    ) : (
-                      <Typography variant="body2" color="textSecondary" align="center">
-                        Player 1 hasn't made any guesses yet
-                      </Typography>
                     )}
+                    
+                    {!canMakeGuess && (
+                      <Box sx={{ mt: 3, p: 3, backgroundColor: '#f5f5f5', borderRadius: 2 }}>
+                        <Typography variant="h6" gutterBottom sx={{ color: '#666' }}>
+                          ⏳ Waiting for Player 1...
+                        </Typography>
+                        <Typography variant="body2" color="textSecondary">
+                          {state.gameState === GameState.P1_GUESS_TURN && "Player 1 is making their guess"}
+                        </Typography>
+                      </Box>
+                    )}
+                  </Box>
+
+                  {/* Player 1's Opponent Board (Read-only) */}
+                  <Box sx={{ mt: 4, opacity: 0.8 }}>
+                    <Typography variant="h5" align="center" sx={{ mb: 2, color: '#4caf50' }}>
+                      🟩 Opponent's Board (Player 1)
+                    </Typography>
+                    
+                    <WordleBoard
+                      guesses={opponentGuesses} // Show opponent's guesses (Player 1 when I'm Player 2)
+                      currentWord="" // Never show opponent's current typing
+                      isActive={false}
+                      playerName=""
+                    />
+                    
+                    <Box sx={{ mt: 2, p: 2, backgroundColor: '#f0f0f0', borderRadius: 2, textAlign: 'center' }}>
+                      <Typography variant="body2" sx={{ color: '#666' }}>
+                        Guesses: {state.p1GuessCount.toString()}/6
+                        {state.gameState === GameState.P1_GUESS_TURN && " • Currently guessing..."}
+                        {state.gameState === GameState.P2_GUESS_TURN && " • Waiting for your move"}
+                      </Typography>
+                    </Box>
                   </Box>
                 </Box>
               );
@@ -758,7 +712,7 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
             return (
               <Box sx={{ p: 3, backgroundColor: '#ffebee', borderRadius: 2 }}>
                 <Typography variant="h6" color="error" align="center">
-                  ⚠️ Unable to determine player role
+                  ⚠️ Player Role Detection Failed
                 </Typography>
                 <Typography variant="body2" align="center">
                   Player 1: {state.isPlayer1?.toString()}, Player 2: {state.isPlayer2?.toString()}
@@ -769,6 +723,22 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
                 <Typography variant="body2" align="center">
                   Debug: P1_GUESS_TURN={GameState.P1_GUESS_TURN}, P2_GUESS_TURN={GameState.P2_GUESS_TURN}
                 </Typography>
+                <Typography variant="body2" align="center" sx={{ mt: 2, color: '#d32f2f' }}>
+                  Please check browser console for API debug logs.
+                </Typography>
+                <Typography variant="body2" align="center" sx={{ mt: 1, color: '#666' }}>
+                  This usually means the wallet connection or private state is corrupted.
+                  Try refreshing the page and reconnecting your wallet.
+                </Typography>
+                <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
+                  <Button 
+                    variant="contained" 
+                    onClick={() => window.location.reload()} 
+                    sx={{ backgroundColor: '#d32f2f', '&:hover': { backgroundColor: '#b71c1c' } }}
+                  >
+                    Refresh Page
+                  </Button>
+                </Box>
               </Box>
             );
           })()}

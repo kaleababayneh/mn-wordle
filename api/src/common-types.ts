@@ -2,7 +2,12 @@
 import { type MidnightProviders } from '@midnight-ntwrk/midnight-js-types';
 import { type FoundContract } from '@midnight-ntwrk/midnight-js-contracts';
 import type { BBoardPrivateState, Contract, Witnesses } from '../../contract/src/index';
-import type { Ledger, Word, GuessResult, Maybe } from '../../contract/src/managed/wordle/contract/index.cjs';
+import type { Word, GuessResult, Maybe, Ledger } from '../../contract/src/managed/wordle/contract/index.cjs';
+
+export type PlayerResult = {
+  guess_words: Word[];
+  guess_results: GuessResult[];
+};
 
 export const bboardPrivateStateKey = 'bboardPrivateState';
 export type PrivateStateId = typeof bboardPrivateStateKey;
@@ -81,11 +86,13 @@ export type WordleDerivedState = {
   readonly p1: Uint8Array | null;
   readonly p1GuessCount: bigint;
   readonly p1LastGuessResult: GuessResult | null;
+  readonly p1Results: PlayerResult; // NEW: Full P1 results array
   
   // Player 2 state  
   readonly p2: Uint8Array | null;
   readonly p2GuessCount: bigint;
   readonly p2LastGuessResult: GuessResult | null;
+  readonly p2Results: PlayerResult; // NEW: Full P2 results array
   
   // Current user info
   readonly isPlayer1: boolean;
