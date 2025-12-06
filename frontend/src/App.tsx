@@ -49,9 +49,12 @@ const App: React.FC = () => {
             <WordleGameWrapper boardDeployment$={boardDeployment} />
           </div>
         ))}
-        <div data-testid="wordle-game-start">
-          <WordleGameWrapper />
-        </div>
+        {/* Fallback: Show empty game wrapper only if no deployments exist */}
+        {boardDeployments.length === 0 && (
+          <div data-testid="wordle-game-start">
+            <WordleGameWrapper />
+          </div>
+        )}
       </MainLayout>
     </Box>
   );
