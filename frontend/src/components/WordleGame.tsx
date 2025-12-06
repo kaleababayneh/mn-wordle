@@ -169,7 +169,7 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
   const canVerifyGuess = state?.isMyTurn && (state?.gameState === GameState.P1_VERIFY_TURN || state?.gameState === GameState.P2_VERIFY_TURN);
   const isGameComplete = state?.gameState === GameState.P1_WINS || state?.gameState === GameState.P2_WINS || state?.gameState === GameState.DRAW;
 
-  // Update guess history when state changes
+  // Update guess history when state changes - only add results after verification
   useEffect(() => {
     if (state?.lastGuessResult && state?.currentGuess && api) {
       const guessWord = api.wordToString(state.currentGuess);
@@ -181,25 +181,40 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
         Number(state.lastGuessResult.fifth_letter_result),
       ];
 
-      // Determine which player made this guess based on game state and whose turn it was
-      if (state.gameState === GameState.P2_VERIFY_TURN || state.gameState === GameState.P2_GUESS_TURN) {
-        // Player 1 just made a guess
-        setP1Guesses(prev => {
-          const existing = prev.find(g => g.word === guessWord);
-          if (!existing) {
-            return [...prev, { word: guessWord, result }];
-          }
-          return prev.map(g => g.word === guessWord ? { ...g, result } : g);
-        });
-      } else if (state.gameState === GameState.P1_VERIFY_TURN || state.gameState === GameState.P1_GUESS_TURN) {
-        // Player 2 just made a guess
-        setP2Guesses(prev => {
-          const existing = prev.find(g => g.word === guessWord);
-          if (!existing) {
-            return [...prev, { word: guessWord, result }];
-          }
-          return prev.map(g => g.word === guessWord ? { ...g, result } : g);
-        });
+      // Check if all results are 0 (meaning unverified guess)
+      const isUnverified = result.every(r => r === 0);
+      
+      if (!isUnverified) {
+        // Only update results when we have actual verification results (not all zeros)
+        const gameState = state.gameState;
+        
+        if (gameState === GameState.P2_GUESS_TURN || 
+            gameState === 6 || // P1_WINS
+            gameState === 7 || // P2_WINS  
+            gameState === 8) { // DRAW
+          // Player 1's guess was just verified by Player 2
+          setP1Guesses(prev => {
+            const lastGuess = prev[prev.length - 1];
+            if (lastGuess && lastGuess.word === guessWord && !lastGuess.result) {
+              return prev.map((g, i) => i === prev.length - 1 ? { ...g, result } : g);
+            }
+            return prev;
+          });
+        }
+        
+        if (gameState === GameState.P1_GUESS_TURN ||
+            gameState === 6 || // P1_WINS
+            gameState === 7 || // P2_WINS
+            gameState === 8) { // DRAW
+          // Player 2's guess was just verified by Player 1
+          setP2Guesses(prev => {
+            const lastGuess = prev[prev.length - 1];
+            if (lastGuess && lastGuess.word === guessWord && !lastGuess.result) {
+              return prev.map((g, i) => i === prev.length - 1 ? { ...g, result } : g);
+            }
+            return prev;
+          });
+        }
       }
     }
   }, [state?.lastGuessResult, state?.currentGuess, state?.gameState, api]);
@@ -567,7 +582,7 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
                   {canMakeGuess && state.isMyTurn && (
                     <Box sx={{ mt: 3, p: 3, backgroundColor: '#e8f5e8', borderRadius: 2, border: '2px solid #4caf50' }}>
                       <Typography variant="h6" gutterBottom sx={{ color: '#2e7d32' }}>
-                        🎯 Your Turn! Type your guess ({currentGuess.length}/5 letters)
+                        🎯 Your Turn! Type your guess 5 letters
                       </Typography>
                       <TextField
                         inputRef={inputRef}
@@ -692,7 +707,7 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
                   {canMakeGuess && state.isMyTurn && (
                     <Box sx={{ mt: 3, p: 3, backgroundColor: '#e3f2fd', borderRadius: 2, border: '2px solid #2196f3' }}>
                       <Typography variant="h6" gutterBottom sx={{ color: '#1976d2' }}>
-                        🎯 Your Turn! Type your guess ({currentGuess.length}/5 letters)
+                        🎯 Your Turn! Type your guess 5 letters
                       </Typography>
                       <TextField
                         inputRef={inputRef}
