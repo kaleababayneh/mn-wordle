@@ -146,8 +146,8 @@ export class WordleAPI implements DeployedWordleAPI {
   async joinAsPlayer1(word: string): Promise<void> {
     this.logger?.info(`joinAsPlayer1: ${word} -> ${word.toUpperCase()}`);
 
-    // Always get fresh private state to ensure it's valid
-    const currentPrivateState = await WordleAPI.getPrivateState(this.providers);
+    // Always get fresh private state to ensure it's valid, using contract-specific keys
+    const currentPrivateState = await WordleAPI.getPrivateState(this.providers, this.deployedContractAddress);
     
     this.logger?.info(`Current private state details: secretKey=${!!currentPrivateState.secretKey}, salt=${!!currentPrivateState.salt}, word=${!!currentPrivateState.word}`);
 
@@ -196,8 +196,8 @@ export class WordleAPI implements DeployedWordleAPI {
   async joinAsPlayer2(word: string): Promise<void> {
     this.logger?.info(`joinAsPlayer2: ${word} -> ${word.toUpperCase()}`);
 
-    // Always get fresh private state to ensure it's valid
-    const currentPrivateState = await WordleAPI.getPrivateState(this.providers);
+    // Always get fresh private state to ensure it's valid, using contract-specific keys
+    const currentPrivateState = await WordleAPI.getPrivateState(this.providers, this.deployedContractAddress);
 
     // Ensure consistent case handling - convert to uppercase
     const normalizedWord = word.toUpperCase();
@@ -396,7 +396,7 @@ export class WordleAPI implements DeployedWordleAPI {
       contractAddress,
       contract: wordleContractInstance,
       privateStateId: bboardPrivateStateKey,
-      initialPrivateState: await WordleAPI.getPrivateState(providers),
+      initialPrivateState: await WordleAPI.getPrivateState(providers, contractAddress),
     });
 
     logger?.trace({
@@ -408,32 +408,61 @@ export class WordleAPI implements DeployedWordleAPI {
     return new WordleAPI(deployedWordleContract, providers, logger);
   }
 
-  private static async getPrivateState(providers: WordleProviders): Promise<BBoardPrivateState> {
+  private static async getPrivateState(providers: WordleProviders, contractAddress?: ContractAddress): Promise<BBoardPrivateState> {
+    // Use contract address to create unique storage keys for each game
+    const contractSuffix = contractAddress ? contractAddress.slice(-8) : 'default';
+    console.log(`Getting private state for contract: ${contractSuffix}`);
+    
+    // Check if we already have contract-specific private state
+    const contractSpecificKey = `wordle_privateState_${contractSuffix}`;
+    const storedPrivateState = localStorage.getItem(contractSpecificKey);
+    
+    if (storedPrivateState) {
+      try {
+        const parsed = JSON.parse(storedPrivateState);
+        const secretKey = new Uint8Array(parsed.secretKey);
+        const salt = new Uint8Array(parsed.salt);
+        const word = new Uint8Array(parsed.word);
+        
+        const restoredState = createBBoardPrivateState(secretKey, salt, word);
+        console.log(`Restored private state for contract ${contractSuffix}`);
+        
+        // Set to private state provider
+        await providers.privateStateProvider.set(bboardPrivateStateKey, restoredState);
+        return restoredState;
+      } catch (e) {
+        console.warn(`Failed to restore private state for contract ${contractSuffix}, creating new one`);
+      }
+    }
+    
     // Try to get from private state provider first
     const existingPrivateState = await providers.privateStateProvider.get(bboardPrivateStateKey);
     
     if (existingPrivateState && existingPrivateState.salt && existingPrivateState.secretKey) {
-      console.log('getPrivateState: found valid existing state');
+      console.log('getPrivateState: found valid existing state from provider');
       return existingPrivateState;
     }
     
     console.log('getPrivateState: creating new state');
     
-    // Generate or retrieve persistent keys from localStorage
+    // Generate or retrieve persistent keys from localStorage with contract-specific keys
     const getOrCreateKey = (keyName: string): Uint8Array => {
-      const stored = localStorage.getItem(`wordle_${keyName}`);
+      const storageKey = `wordle_${keyName}_${contractSuffix}`;
+      const stored = localStorage.getItem(storageKey);
       if (stored) {
         try {
           const parsed = JSON.parse(stored);
+          console.log(`Retrieved ${keyName} for contract ${contractSuffix}`);
           return new Uint8Array(parsed);
         } catch (e) {
-          console.warn(`Failed to parse stored ${keyName}, generating new one`);
+          console.warn(`Failed to parse stored ${keyName} for contract ${contractSuffix}, generating new one`);
         }
       }
       
       // Generate new key
       const newKey = utils.randomBytes(32);
-      localStorage.setItem(`wordle_${keyName}`, JSON.stringify(Array.from(newKey)));
+      localStorage.setItem(storageKey, JSON.stringify(Array.from(newKey)));
+      console.log(`Generated new ${keyName} for contract ${contractSuffix}`);
       return newKey;
     };
     
@@ -442,6 +471,7 @@ export class WordleAPI implements DeployedWordleAPI {
     const defaultWord = new Uint8Array([67, 82, 65, 78, 69]); // "CRANE"
     
     console.log('getPrivateState: created components', {
+      contractSuffix,
       secretKey: !!secretKey,
       salt: !!salt,
       word: !!defaultWord,
@@ -456,6 +486,7 @@ export class WordleAPI implements DeployedWordleAPI {
     const newState = createBBoardPrivateState(secretKey, salt, defaultWord);
     
     console.log('getPrivateState: created private state', {
+      contractSuffix,
       secretKey: !!newState.secretKey,
       salt: !!newState.salt,
       word: !!newState.word,
@@ -466,6 +497,15 @@ export class WordleAPI implements DeployedWordleAPI {
     
     // Save to private state provider for consistency
     await providers.privateStateProvider.set(bboardPrivateStateKey, newState);
+    
+    // Also save to contract-specific localStorage for persistence
+    const stateToStore = {
+      secretKey: Array.from(newState.secretKey),
+      salt: Array.from(newState.salt),
+      word: Array.from(newState.word)
+    };
+    localStorage.setItem(contractSpecificKey, JSON.stringify(stateToStore));
+    console.log(`Saved private state to localStorage for contract ${contractSuffix}`);
     
     return newState;
   }
