@@ -29,6 +29,80 @@ The game is currently deployed on the Midnight Undeployed network.
 
 ---
 
+## 🎮 Game Flow
+
+```mermaid
+sequenceDiagram
+    participant P1 as Player 1
+    participant Contract as Smart Contract
+    participant P2 as Player 2
+    
+    Note over P1,P2: Game Setup Phase
+    P1->>P1: Generate secret word + salt
+    P1->>Contract: join_p1(word_hash)
+    Contract->>Contract: State: waiting_p2
+    
+    P2->>P2: Generate secret word + salt
+    P2->>Contract: join_p2(word_hash)
+    Contract->>Contract: State: p1_guess_turn
+    
+    Note over P1,P2: Gameplay Loop
+    loop Until Winner or Draw
+        P1->>Contract: turn_player1(guess)
+        Contract->>Contract: Store P1's guess
+        Contract->>Contract: Verify P2's previous guess (if exists)
+        Contract->>Contract: State: p2_guess_turn
+        
+        P2->>P2: Generate ZK proof for P1's guess
+        P2->>Contract: verify_p1_guess(proof)
+        Contract->>Contract: Evaluate guess without revealing word
+        Contract->>P1: Return guess result (green/yellow/gray)
+        
+        alt P1 guessed correctly
+            Contract->>Contract: State: p1_wins
+        else P1 used all 6 guesses
+            alt P2 also used all guesses
+                Contract->>Contract: State: draw
+            else P2 still has guesses
+                Contract->>Contract: State: p2_wins
+            end
+        else Game continues
+            P2->>Contract: turn_player2(guess)
+            Contract->>Contract: Store P2's guess
+            Contract->>Contract: Verify P1's previous guess
+            Contract->>Contract: State: p1_guess_turn
+            
+            P1->>P1: Generate ZK proof for P2's guess
+            P1->>Contract: verify_p2_guess(proof)
+            Contract->>Contract: Evaluate guess without revealing word
+            Contract->>P2: Return guess result
+            
+            alt P2 guessed correctly
+                Contract->>Contract: State: p2_wins
+            else P2 used all 6 guesses
+                alt P1 also used all guesses
+                    Contract->>Contract: State: draw
+                else P1 still has guesses
+                    Contract->>Contract: State: p1_wins
+                end
+            end
+        end
+    end
+    
+    Note over P1,P2: Game Over
+    Contract->>P1: Final game state
+    Contract->>P2: Final game state
+```
+
+**Key Points:**
+- 🔐 **Word Commitment**: Players commit hash(word + salt + secret_key) - no one can change their word mid-game
+- 🎯 **Turn-Based**: Alternating guess and verify phases ensure fair play
+- ✅ **ZK Verification**: Each guess is verified by the opponent using zero-knowledge proofs without revealing the secret word
+- 🏆 **Win Conditions**: First to guess correctly wins, or draw if both use all 6 guesses without success
+- 🔒 **Privacy**: Secret words and salts never leave the player's device
+
+---
+
 ## 📦 Installation & Setup
 
 ### Prerequisites
