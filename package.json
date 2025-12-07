@@ -30,6 +30,7 @@
     "@midnight-ntwrk/wallet-api": "^5.0.0",
     "@midnight-ntwrk/wallet-sdk-address-format": "^2.0.0",
     "@midnight-ntwrk/zswap": "^4.0.0",
+    "an-array-of-english-words": "^2.0.0",
     "buffer": "^6.0.3",
     "fp-ts": "^2.16.11",
     "pino": "^10.1.0",

@@ -15,7 +15,7 @@ import {
   StepLabel,
   Paper,
 } from '@mui/material';
-import { GameState, type WordleDerivedState, type DeployedWordleAPI } from '../../../api/src/index';
+import { GameState, type WordleDerivedState, type DeployedWordleAPI, utils } from '../../../api/src/index';
 
 interface WordleGameProps {
   api?: DeployedWordleAPI;
@@ -328,6 +328,12 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
       return;
     }
 
+    // Validate that the word is a valid English word
+    if (!utils.isValidWordleWord(playerWord)) {
+      setError(`"${playerWord}" is not a valid 5-letter English word. Please try another word.`);
+      return;
+    }
+
     setIsSubmitting(true);
     setError(null);
 
@@ -367,6 +373,12 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
     // Additional validation
     if (!/^[A-Z]{5}$/.test(currentGuess)) {
       setError('Please enter exactly 5 letters (A-Z only)');
+      return;
+    }
+
+    // Validate that the guess is a valid English word
+    if (!utils.isValidWordleWord(currentGuess)) {
+      setError(`"${currentGuess}" is not a valid 5-letter English word. Please try another word.`);
       return;
     }
 
@@ -446,7 +458,32 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
         <CardContent>
           {/* Progress Stepper */}
           <Box sx={{ mb: 3 }}>
-            <Stepper activeStep={getActiveStep()} alternativeLabel>
+            <Stepper 
+              activeStep={getActiveStep()} 
+              alternativeLabel
+              sx={{
+                '& .MuiStepConnector-root': {
+                  top: '12px',
+                  '& .MuiStepConnector-line': {
+                    borderTopWidth: '2px',
+                  }
+                },
+                '& .MuiStepIcon-root': {
+                  width: '24px',
+                  height: '24px',
+                  '&.Mui-completed': {
+                    color: '#4caf50',
+                  },
+                  '&.Mui-active': {
+                    color: '#2196f3',
+                  }
+                },
+                '& .MuiStepLabel-label': {
+                  fontSize: '0.875rem',
+                  marginTop: '8px'
+                }
+              }}
+            >
               {getStepperSteps().map((label) => (
                 <Step key={label}>
                   <StepLabel>{label}</StepLabel>
@@ -505,13 +542,34 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
                 onChange={(e) => setPlayerWord(e.target.value.toUpperCase().slice(0, 5))}
                 sx={{ mb: 2, width: 300 }}
                 inputProps={{ maxLength: 5, style: { textAlign: 'center', fontSize: '1.2rem' } }}
+                error={playerWord.length === 5 && !utils.isValidWordleWord(playerWord)}
+                helperText={
+                  playerWord.length === 5 
+                    ? utils.isValidWordleWord(playerWord) 
+                      ? "✓ Valid word" 
+                      : "⚠ Not a valid English word"
+                    : `${playerWord.length}/5 letters`
+                }
               />
+              <Box sx={{ mb: 2, textAlign: 'center' }}>
+                <Button 
+                  size="small" 
+                  variant="text" 
+                  onClick={() => setPlayerWord(utils.getRandomValidWord())}
+                  sx={{ textTransform: 'none' }}
+                >
+                  🎲 Suggest random word
+                </Button>
+                <Typography variant="caption" display="block" sx={{ mt: 1, opacity: 0.7 }}>
+                  {utils.getValidWordCount().toLocaleString()} valid words available
+                </Typography>
+              </Box>
               <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
                 {canJoinAsPlayer1 && (
                   <Button
                     variant="contained"
                     onClick={() => handleJoinGame(true)}
-                    disabled={isSubmitting || playerWord.length !== 5}
+                    disabled={isSubmitting || playerWord.length !== 5 || !utils.isValidWordleWord(playerWord)}
                     size="large"
                   >
                     Join as Player 1
@@ -521,7 +579,7 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
                   <Button
                     variant="contained"
                     onClick={() => handleJoinGame(false)}
-                    disabled={isSubmitting || playerWord.length !== 5}
+                    disabled={isSubmitting || playerWord.length !== 5 || !utils.isValidWordleWord(playerWord)}
                     size="large"
                   >
                     Join as Player 2

@@ -46,6 +46,11 @@ export interface DeployedWordleAPI {
   clearPrivateState: () => Promise<void>;
   debugLocalStorage: () => void;
   forceRefreshFromLocalStorage: () => Promise<void>;
+  
+  // Word validation methods
+  isValidWord: (word: string) => boolean;
+  getRandomValidWord: () => string;
+  getValidWordCount: () => number;
 
   // New helper methods for competitive display
   getPlayerGuesses: (player: 'player1' | 'player2') => Promise<Array<{word: string, result: number[] | null}>>;
@@ -170,13 +175,19 @@ export class WordleAPI implements DeployedWordleAPI {
   async joinAsPlayer1(word: string): Promise<void> {
     this.logger?.info(`joinAsPlayer1: ${word} -> ${word.toUpperCase()}`);
 
+    // Validate word before proceeding
+    const normalizedWord = utils.validateAndNormalizeWord(word);
+    if (!normalizedWord) {
+      throw new Error(`Invalid word: ${word}. Must be a valid 5-letter English word.`);
+    }
+    this.logger?.info(`Word validation passed for: ${normalizedWord}`);
+
     // Always get fresh private state to ensure it's valid, using contract-specific keys
     const currentPrivateState = await WordleAPI.getPrivateState(this.providers, this.deployedContractAddress);
     
     this.logger?.info(`Current private state details: secretKey=${!!currentPrivateState.secretKey}, salt=${!!currentPrivateState.salt}, word=${!!currentPrivateState.word}`);
 
-    // Ensure consistent case handling - convert to uppercase
-    const normalizedWord = word.toUpperCase();
+    // Use the validated normalized word
     const wordBytes = new Uint8Array([...normalizedWord].map(c => c.charCodeAt(0)));
     this.logger?.info(`Word bytes: [${Array.from(wordBytes).join(', ')}]`);
     const updatedPrivateState = createBBoardPrivateState(
@@ -220,11 +231,17 @@ export class WordleAPI implements DeployedWordleAPI {
   async joinAsPlayer2(word: string): Promise<void> {
     this.logger?.info(`joinAsPlayer2: ${word} -> ${word.toUpperCase()}`);
 
+    // Validate word before proceeding
+    const normalizedWord = utils.validateAndNormalizeWord(word);
+    if (!normalizedWord) {
+      throw new Error(`Invalid word: ${word}. Must be a valid 5-letter English word.`);
+    }
+    this.logger?.info(`Word validation passed for: ${normalizedWord}`);
+
     // Always get fresh private state to ensure it's valid, using contract-specific keys
     const currentPrivateState = await WordleAPI.getPrivateState(this.providers, this.deployedContractAddress);
 
-    // Ensure consistent case handling - convert to uppercase
-    const normalizedWord = word.toUpperCase();
+    // Use the validated normalized word
     const wordBytes = new Uint8Array([...normalizedWord].map(c => c.charCodeAt(0)));
     this.logger?.info(`Word bytes: [${Array.from(wordBytes).join(', ')}]`);
     const updatedPrivateState = createBBoardPrivateState(
@@ -272,7 +289,14 @@ export class WordleAPI implements DeployedWordleAPI {
   async makeGuess(word: string): Promise<void> {
     this.logger?.info(`makeGuess: ${word}`);
 
-    const wordStruct = this.stringToWord(word);
+    // Validate word before proceeding
+    const normalizedWord = utils.validateAndNormalizeWord(word);
+    if (!normalizedWord) {
+      throw new Error(`Invalid word: ${word}. Must be a valid 5-letter English word.`);
+    }
+    this.logger?.info(`Word validation passed for makeGuess: ${normalizedWord}`);
+
+    const wordStruct = this.stringToWord(normalizedWord);
 
     // CRITICAL: FORCE refresh private state from localStorage before EVERY contract call
     this.logger?.info(`FORCING private state refresh from localStorage before makeGuess`);
@@ -608,6 +632,34 @@ export class WordleAPI implements DeployedWordleAPI {
       Number(word.fourth_letter),
       Number(word.fifth_letter)
     );
+  }
+
+  /**
+   * Validates if a word is a valid English 5-letter word for Wordle.
+   *
+   * @param word The word to validate.
+   * @returns true if valid, false otherwise.
+   */
+  isValidWord(word: string): boolean {
+    return utils.isValidWordleWord(word);
+  }
+
+  /**
+   * Gets a random valid Wordle word.
+   *
+   * @returns A random valid 5-letter English word.
+   */
+  getRandomValidWord(): string {
+    return utils.getRandomValidWord();
+  }
+
+  /**
+   * Gets the total number of valid Wordle words available.
+   *
+   * @returns The count of valid words.
+   */
+  getValidWordCount(): number {
+    return utils.getValidWordCount();
   }
 
   /**
