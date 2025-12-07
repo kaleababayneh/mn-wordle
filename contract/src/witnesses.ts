@@ -28,9 +28,7 @@ export const witnesses = {
     bigint[],
   ] => {    
     // Convert Uint8Array to bigint array (Vector<5, Uint<8>>)
-    const wordArray = Array.from(privateState.word.slice(0, 5)).map(byte => BigInt(byte));
-    console.log(`WITNESS DEBUG: returning word array: [${wordArray.join(', ')}]`);
-    
+    const wordArray = Array.from(privateState.word.slice(0, 5)).map(byte => BigInt(byte));    
     return [privateState, wordArray];
   },
 
