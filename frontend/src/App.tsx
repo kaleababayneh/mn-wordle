@@ -14,9 +14,9 @@
 // limitations under the License.
 
 import React, { useEffect, useState } from 'react';
-import { Routes, Route, useParams, useNavigate } from 'react-router-dom';
+import { Routes, Route, useParams } from 'react-router-dom';
 import { Box } from '@mui/material';
-import { MainLayout, WordleGameWrapper } from './components';
+import { MainLayout, WordleGameWrapper, HomePage } from './components';
 import { useDeployedBoardContext } from './hooks';
 import { type BoardDeployment } from './contexts';
 import { type Observable } from 'rxjs';
@@ -54,88 +54,6 @@ const GameContract: React.FC = () => {
         <div data-testid={`wordle-game-${contractAddress}`}>
           <WordleGameWrapper boardDeployment$={boardDeployment} />
         </div>
-      </MainLayout>
-    </Box>
-  );
-};
-
-/**
- * Component for the home page with ability to create new games
- */
-const HomePage: React.FC = () => {
-  const boardApiProvider = useDeployedBoardContext();
-  const navigate = useNavigate();
-  const [boardDeployments, setBoardDeployments] = useState<Array<Observable<BoardDeployment>>>([]);
-  const [isCreatingGame, setIsCreatingGame] = useState(false);
-
-  useEffect(() => {
-    const subscription = boardApiProvider.boardDeployments$.subscribe(setBoardDeployments);
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [boardApiProvider]);
-
-  const createNewGame = async () => {
-    setIsCreatingGame(true);
-    try {
-      // Create a new contract deployment (no contractAddress = new deployment)
-      const deployment = boardApiProvider.resolve();
-      
-      // Wait for deployment to complete and get contract address
-      const subscription = deployment.subscribe((deploymentState) => {
-        if (deploymentState.status === 'deployed') {
-          const contractAddress = deploymentState.api.deployedContractAddress;
-          console.log(`New game created with contract: ${contractAddress}`);
-          
-          // Redirect to the new game URL
-          navigate(`/${contractAddress}`);
-          subscription.unsubscribe();
-        } else if (deploymentState.status === 'failed') {
-          console.error('Failed to create game:', deploymentState.error);
-          setIsCreatingGame(false);
-          subscription.unsubscribe();
-        }
-      });
-    } catch (error) {
-      console.error('Error creating game:', error);
-      setIsCreatingGame(false);
-    }
-  };
-
-  return (
-    <Box sx={{ background: '#000', minHeight: '100vh' }}>
-      <MainLayout>
-        {/* Show existing games */}
-        {boardDeployments.map((boardDeployment, idx) => (
-          <div data-testid={`wordle-game-${idx}`} key={`wordle-game-${idx}`}>
-            <WordleGameWrapper boardDeployment$={boardDeployment} />
-          </div>
-        ))}
-        
-        {/* Show create new game option if no deployments exist */}
-        {boardDeployments.length === 0 && (
-          <div data-testid="wordle-game-start">
-            <Box sx={{ p: 4, textAlign: 'center' }}>
-              <button 
-                onClick={createNewGame} 
-                disabled={isCreatingGame}
-                style={{
-                  padding: '12px 24px',
-                  fontSize: '16px',
-                  backgroundColor: '#4CAF50',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: isCreatingGame ? 'not-allowed' : 'pointer',
-                  opacity: isCreatingGame ? 0.6 : 1
-                }}
-              >
-                {isCreatingGame ? 'Creating New Game...' : 'Create New Game'}
-              </button>
-            </Box>
-            <WordleGameWrapper />
-          </div>
-        )}
       </MainLayout>
     </Box>
   );

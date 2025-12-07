@@ -14,7 +14,10 @@ import {
   Step,
   StepLabel,
   Paper,
+  IconButton,
+  Snackbar,
 } from '@mui/material';
+import { Share as ShareIcon, ContentCopy as CopyIcon } from '@mui/icons-material';
 import { GameState, type WordleDerivedState, type DeployedWordleAPI, utils } from '../../../api/src/index';
 import { WinnerConfetti, LoserConfetti } from './ConfettiComponents';
 
@@ -167,6 +170,10 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
     width: typeof window !== 'undefined' ? window.innerWidth : 1200,
     height: typeof window !== 'undefined' ? window.innerHeight : 800,
   });
+  const [shareNotification, setShareNotification] = useState<{ open: boolean; message: string }>({
+    open: false,
+    message: '',
+  });
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Handle window resize for confetti
@@ -181,6 +188,56 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Share game functionality
+  const shareGame = async () => {
+    if (!api?.deployedContractAddress) {
+      setShareNotification({
+        open: true,
+        message: 'No contract address available to share.',
+      });
+      return;
+    }
+
+    const gameUrl = `${window.location.origin}/${api.deployedContractAddress}`;
+    
+    try {
+      if (navigator.share) {
+        // Use native share API if available
+        await navigator.share({
+          title: 'Join my P2P Wordle game!',
+          text: 'Come play Wordle with me in a decentralized way',
+          url: gameUrl,
+        });
+      } else {
+        // Fallback to clipboard copy
+        await navigator.clipboard.writeText(gameUrl);
+        setShareNotification({
+          open: true,
+          message: 'Game link copied to clipboard!',
+        });
+      }
+    } catch (error) {
+      console.error('Failed to share:', error);
+      // Fallback to copying to clipboard
+      try {
+        await navigator.clipboard.writeText(gameUrl);
+        setShareNotification({
+          open: true,
+          message: 'Game link copied to clipboard!',
+        });
+      } catch (clipboardError) {
+        setShareNotification({
+          open: true,
+          message: 'Failed to copy link. Please copy manually: ' + gameUrl,
+        });
+      }
+    }
+  };
+
+  const handleCloseShareNotification = () => {
+    setShareNotification({ ...shareNotification, open: false });
+  };
 
   const canJoinAsPlayer1 = state?.gameState === GameState.WAITING_P1;
   const canJoinAsPlayer2 = state?.gameState === GameState.WAITING_P2;
@@ -480,7 +537,29 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
             </Box>
           }
           action={
-            <Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              {api?.deployedContractAddress && 
+                state && 
+                (state.gameState === GameState.WAITING_P1 || state.gameState === GameState.WAITING_P2) && (
+                <Button
+                  variant="contained"
+                  size="small"
+                  startIcon={<ShareIcon />}
+                  onClick={shareGame}
+                  sx={{
+                    borderRadius: 2,
+                    textTransform: 'none',
+                    minWidth: 'auto',
+                    backgroundColor: '#90EE90',
+                    color: '#000',
+                    '&:hover': {
+                      backgroundColor: '#7FDD7F',
+                    },
+                  }}
+                >
+                  Share
+                </Button>
+              )}
               {state && (
                 <Chip
                   label={`${state.playerRole === 'spectator' ? 'Spectator' : state.playerRole.charAt(0).toUpperCase() + state.playerRole.slice(1)}`}
@@ -855,6 +934,15 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
           )}
         </>
       )}
+      
+      {/* Share notification */}
+      <Snackbar
+        open={shareNotification.open}
+        autoHideDuration={3000}
+        onClose={handleCloseShareNotification}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        message={shareNotification.message}
+      />
     </Box>
   );
 };
