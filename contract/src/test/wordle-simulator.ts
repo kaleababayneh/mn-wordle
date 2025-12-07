@@ -58,8 +58,8 @@ export function stringToWordBytes(word: string): Uint8Array {
 export const GAME_STATE = {
   waiting_p1: 0,
   waiting_p2: 1,
-  p1_turn: 2,
-  p2_turn: 3,
+  p1_guess_turn: 2,
+  p2_guess_turn: 3,
   p1_wins: 4,
   p2_wins: 5,
   draw: 6,
@@ -204,12 +204,6 @@ export class P2PWordleSimulator {
     );
   }
 
-  /**
-   * Player 1 verifies Player 2's guess
-   */
-  verify_guess(): Ledger {
-    return this.updateStateAndGetLedger(
-      this.contract.impureCircuits.verify_p1_guess(this.turnContext)
-    );
-  }
+
+
 }
