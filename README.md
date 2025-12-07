@@ -14,7 +14,7 @@ Zero-knowledge (ZK) is one of the most fascinating cryptographic techniques to d
 
 In gaming, some projects already employ ZK, but often only to verify the **final result** , leaving intermediate steps unverified. This approach works for single-player games where only the outcome matters. Peer to Peer **Wordle** , however, is different — and in a **peer-to-peer** setting, every step matters. Two players compete while trusting neither the other nor a third party.
 
-In ZK Wordle, zero-knowledge isn’t a “bonus privacy feature” — it’s **essential** . Without it, hashing words would be insecure or the verification of guesses will be reliant in the honest behavior of the opponent player. Here, each word is hashed together with a **secret salt** , and both remain private on the player’s device. When a player submits a guess, their opponent generates a **zero-knowledge proof** and verifies it on-chain without leaking any part of their secret word or salt.
+In ZK Wordle, zero-knowledge isn't a "bonus privacy feature" — it's **essential** . Without it, hashing words would be insecure or the verification of guesses will be reliant in the honest behavior of the opponent player. Here, each word is hashed together with a **secret salt** , and both remain private on the player's device. When a player submits a guess, their opponent generates a **zero-knowledge proof** and verifies it on-chain without leaking any part of their secret word or salt. To ensure fair gameplay, the game integrates the `an-array-of-english-words` npm library, which validates that all guesses and secret words are legitimate English words, preventing abuse and maintaining game integrity.
 
 ## Deployment and Next Steps
 
@@ -198,6 +198,7 @@ Game Rules
 - **On-Chain State**: Game progress stored on Midnight blockchain
 - **Private State**: Secret words never leave your device
 - **Cryptographic Security**: Protected against dictionary attacks
+- **English Word Validation**: Uses the `an-array-of-english-words` npm library to validate guesses against a comprehensive dictionary of valid English words, ensuring fair gameplay and preventing random character combinations
 
 ---
 
