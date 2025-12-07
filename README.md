@@ -16,9 +16,14 @@ In gaming, some projects already employ ZK, but often only to verify the **final
 
 In ZK Wordle, zero-knowledge isn’t a “bonus privacy feature” — it’s **essential** . Without it, hashing words would be insecure or the verification of guesses will be reliant in the honest behavior of the opponent player. Here, each word is hashed together with a **secret salt** , and both remain private on the player’s device. When a player submits a guess, their opponent generates a **zero-knowledge proof** and verifies it on-chain without leaking any part of their secret word or salt.
 
-**Deployment and Next Steps**
+## Deployment and Next Steps
 
-**The game is currently deployed on the Midnight testnet. 👉 Please make sure you are connected to the Midnight testnet network on Lace wallet.**
+The game is currently deployed on the Midnight Undeployed network.
+
+- For testing, use Undeployed or update `main.tsx` to `setNetworkId(NetworkId.TestNet)` if needed.
+- Due to recent testnet faucet issues, prefer Undeployed and fund your Undeployed wallet using the funding script in `wordle-cli`.
+- Ensure your Lace wallet is connected to the Midnight Undeployed network.
+
 
 ✅ **In short:** ZK Wordle reimagines a simple word game as a fully trustless, verifiable peer-to-peer experience. Every guess is provably correct, every word stays private, and the blockchain ensures fairness — all powered by zero-knowledge proofs.
 
