@@ -6,7 +6,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "rm -rf ./dist && vite build --mode testnet && cp -r ../contract/src/managed/wordle/keys ./dist/keys && cp -r ../contract/src/managed/wordle/zkir ./dist/zkir",
+    "build": "rm -rf ./dist && vite build --mode undeployed && cp -r ../contract/src/managed/wordle/keys ./dist/keys && cp -r ../contract/src/managed/wordle/zkir ./dist/zkir",
     "build:testnet": "rm -rf ./dist && vite build --mode testnet && cp -r ../contract/src/managed/wordle/keys ./dist/keys && cp -r ../contract/src/managed/wordle/zkir ./dist/zkir",
     "build:with-typecheck": "rm -rf ./dist && npx tsc && vite build --mode testnet && cp -r ../contract/src/managed/wordle/keys ./dist/keys && cp -r ../contract/src/managed/wordle/zkir ./dist/zkir",
     "build:start": "npm run build && npm run start",
