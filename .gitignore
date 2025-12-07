@@ -63,3 +63,4 @@ managed/
 # .md files
 *.md
 contract/*.md
+.vercel
