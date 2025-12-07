@@ -2,7 +2,7 @@
 
 **a peer to peer zero knowledge based wordle game**
 
-**Midnight(ZK) Wordle** is a peer-to-peer Wordle game where two players set a secret word for each other to guess and continue playing until one of them correctly guesses the other’s word. The game logic is implemented in Compact, making it secure and resistant to tampering or attacks.
+**Midnight(ZK) Wordle** is a peer-to-peer Wordle game where two players set a secret word for each other to guess and continue playing until one of them correctly guesses the other’s word. The game logic is implemented in Compact, making it privacy preserving, secure and resistant to tampering or attacks.
 
 **Zero-knowledge proofs** aren’t just an added feature here — without them, this game wouldn’t be possible. Each player’s secret word, along with its private salt, never leaves their device. This differs from simply hashing a word and committing the hash on-chain, which would still be vulnerable to offline dictionary brute-force attacks. In ZK Wordle, zero-knowledge ensures that a guess can be verified by the word setter as correct or incorrect **without revealing the actual word** in a real time. More technical details of the implementation are explained below.
 
