@@ -13,11 +13,25 @@ import {
   type GuessResult,
   bboardPrivateStateKey,
 } from './common-types.js';
-import { type BBoardPrivateState, createBBoardPrivateState, witnesses } from '../../contract/src/index';
+import { type BBoardPrivateState, createBBoardPrivateState, witnesses } from '../../contract/src/witnesses.js';
 import * as utils from './utils/index.js';
 import { deployContract, findDeployedContract } from '@midnight-ntwrk/midnight-js-contracts';
 import { combineLatest, map, tap, from, type Observable, firstValueFrom, BehaviorSubject, switchMap, take } from 'rxjs';
 import { toHex } from '@midnight-ntwrk/midnight-js-utils';
+
+// localStorage polyfill for Node.js environments
+if (typeof localStorage === 'undefined') {
+  const localStorageMap = new Map<string, string>();
+  // @ts-ignore - Adding localStorage to global for Node.js
+  globalThis.localStorage = {
+    getItem: (key: string) => localStorageMap.get(key) ?? null,
+    setItem: (key: string, value: string) => localStorageMap.set(key, value),
+    removeItem: (key: string) => localStorageMap.delete(key),
+    clear: () => localStorageMap.clear(),
+    get length() { return localStorageMap.size; },
+    key: (index: number) => [...localStorageMap.keys()][index] ?? null
+  };
+}
 
 /** @internal */
 const wordleContractInstance: WordleContract = new Contract(witnesses);
@@ -114,8 +128,8 @@ export class WordleAPI implements DeployedWordleAPI {
         
         console.log('Is Player 1:', isPlayer1);
         console.log('Is Player 2:', isPlayer2);
-        console.log('P1 Results:', ledgerState.p1_results);
-        console.log('P2 Results:', ledgerState.p2_results);
+        //console.log('P1 Results:', ledgerState.p1_results);
+        //console.log('P2 Results:', ledgerState.p2_results);
         console.log('==============================');
         
         let playerRole: 'player1' | 'player2' | 'spectator' = 'spectator';

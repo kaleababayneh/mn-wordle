@@ -13,7 +13,7 @@ import {
   GameState,
   type Word,
   type GuessResult,
-} from '../../api/src/index';
+} from '../../api/src/index.js';
 import { ledger, type Ledger } from '../../contract/src/managed/wordle/contract/index.cjs';
 import {
   type BalancedTransaction,
@@ -127,8 +127,8 @@ const displayLedgerState = async (
     logger.info(`P1 guess count: ${ledgerState.p1_guess_count}`);
     logger.info(`P2 guess count: ${ledgerState.p2_guess_count}`);
     
-    if (ledgerState.last_guess_result.is_some) {
-      const result = ledgerState.last_guess_result.value;
+    if (ledgerState.p1_last_guess_result.is_some) {
+      const result = ledgerState.p1_last_guess_result.value;
       logger.info(`Last guess result: [${result.first_letter_result}, ${result.second_letter_result}, ${result.third_letter_result}, ${result.fourth_letter_result}, ${result.fifth_letter_result}]`);
     } else {
       logger.info(`Last guess result: None`);
@@ -196,8 +196,8 @@ const displayDerivedState = (gameState: WordleDerivedState | undefined, logger: 
       logger.info(`P2 identity: ${toHex(gameState.p2)}`);
     }
     
-    if (gameState.lastGuessResult) {
-      const result = gameState.lastGuessResult;
+    if (gameState.p1LastGuessResult) {
+      const result = gameState.p1LastGuessResult;
       logger.info(`Last guess result: [${result.first_letter_result}, ${result.second_letter_result}, ${result.third_letter_result}, ${result.fourth_letter_result}, ${result.fifth_letter_result}]`);
     }
   }
@@ -219,7 +219,8 @@ You can do one of the following:
   6. Display the current ledger state (known by everyone)
   7. Display the current private state (known only to this DApp instance)
   8. Display the current derived state (known only to this DApp instance)
-  9. Exit
+  9. Get word suggestions (show random valid words)
+  10. Exit
 Which would you like to do? `;
 
 const mainLoop = async (providers: WordleProviders, rli: Interface, logger: Logger): Promise<void> => {
@@ -242,8 +243,18 @@ const mainLoop = async (providers: WordleProviders, rli: Interface, logger: Logg
             logger.error('Word must be exactly 5 letters!');
             break;
           }
+          
+          // Validate the word using the word validation utility
+          const normalizedWord = word.toUpperCase();
+          if (!utils.isValidWordleWord(normalizedWord)) {
+            logger.error(`"${normalizedWord}" is not a valid English word. Please use a valid 5-letter English word.`);
+            logger.info(`Total valid words available: ${utils.getValidWordCount()}`);
+            logger.info(`Random suggestion: ${utils.getRandomValidWord()}`);
+            break;
+          }
+          
           try {
-            await wordleApi.joinAsPlayer1(word.toUpperCase());
+            await wordleApi.joinAsPlayer1(normalizedWord);
             logger.info('Successfully joined as Player 1!');
           } catch (error) {
             logger.error(`Failed to join as Player 1: ${error}`);
@@ -256,8 +267,18 @@ const mainLoop = async (providers: WordleProviders, rli: Interface, logger: Logg
             logger.error('Word must be exactly 5 letters!');
             break;
           }
+          
+          // Validate the word using the word validation utility
+          const normalizedWord = word.toUpperCase();
+          if (!utils.isValidWordleWord(normalizedWord)) {
+            logger.error(`"${normalizedWord}" is not a valid English word. Please use a valid 5-letter English word.`);
+            logger.info(`Total valid words available: ${utils.getValidWordCount()}`);
+            logger.info(`Random suggestion: ${utils.getRandomValidWord()}`);
+            break;
+          }
+          
           try {
-            await wordleApi.joinAsPlayer2(word.toUpperCase());
+            await wordleApi.joinAsPlayer2(normalizedWord);
             logger.info('Successfully joined as Player 2!');
           } catch (error) {
             logger.error(`Failed to join as Player 2: ${error}`);
@@ -270,8 +291,18 @@ const mainLoop = async (providers: WordleProviders, rli: Interface, logger: Logg
             logger.error('Guess must be exactly 5 letters!');
             break;
           }
+          
+          // Validate the guess using the word validation utility
+          const normalizedGuess = guess.toUpperCase();
+          if (!utils.isValidWordleWord(normalizedGuess)) {
+            logger.error(`"${normalizedGuess}" is not a valid English word. Please use a valid 5-letter English word.`);
+            logger.info(`Total valid words available: ${utils.getValidWordCount()}`);
+            logger.info(`Random suggestion: ${utils.getRandomValidWord()}`);
+            break;
+          }
+          
           try {
-            await wordleApi.makeGuess(guess.toUpperCase());
+            await wordleApi.makeGuess(normalizedGuess);
             logger.info('Guess submitted!');
           } catch (error) {
             logger.error(`Failed to make guess: ${error}`);
@@ -303,7 +334,16 @@ const mainLoop = async (providers: WordleProviders, rli: Interface, logger: Logg
         case '8':
           displayDerivedState(currentState, logger);
           break;
-        case '9':
+        case '9': {
+          logger.info('=== Word Suggestions ===');
+          logger.info(`Total valid words available: ${utils.getValidWordCount()}`);
+          logger.info('Here are 10 random valid words:');
+          for (let i = 0; i < 10; i++) {
+            logger.info(`  ${i + 1}. ${utils.getRandomValidWord()}`);
+          }
+          break;
+        }
+        case '10':
           logger.info('Exiting...');
           return;
         default:

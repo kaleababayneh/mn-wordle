@@ -1,8 +1,8 @@
 
 import { type MidnightProviders } from '@midnight-ntwrk/midnight-js-types';
 import { type FoundContract } from '@midnight-ntwrk/midnight-js-contracts';
-import type { BBoardPrivateState, Contract, Witnesses } from '../../contract/src/index';
-import type { Word, GuessResult, Maybe, Ledger } from '../../contract/src/managed/wordle/contract/index.cjs';
+import type { BBoardPrivateState, createBBoardPrivateState, witnesses } from '../../contract/src/witnesses.js';
+import type { Word, GuessResult, Maybe, Ledger, Contract, Witnesses } from '../../contract/src/managed/wordle/contract/index.cjs';
 
 export type PlayerResult = {
   guess_words: Word[];

@@ -16,9 +16,9 @@ export interface Config {
 export const currentDir = path.resolve(new URL(import.meta.url).pathname, '..');
 
 export class TestnetLocalConfig implements Config {
-  privateStateStoreName = 'bboard-private-state';
+  privateStateStoreName = 'wordle-private-state';
   logDir = path.resolve(currentDir, '..', 'logs', 'testnet-local', `${new Date().toISOString()}.log`);
-  zkConfigPath = path.resolve(currentDir, '..', '..', 'contract', 'src', 'managed', 'bboard');
+  zkConfigPath = path.resolve(currentDir, '..', '..', 'contract', 'src', 'managed', 'wordle');
   indexer = 'http://127.0.0.1:8088/api/v1/graphql';
   indexerWS = 'ws://127.0.0.1:8088/api/v1/graphql/ws';
   node = 'http://127.0.0.1:9944';
@@ -30,9 +30,9 @@ export class TestnetLocalConfig implements Config {
 }
 
 export class StandaloneConfig implements Config {
-  privateStateStoreName = 'bboard-private-state';
+  privateStateStoreName = 'wordle-private-state';
   logDir = path.resolve(currentDir, '..', 'logs', 'standalone', `${new Date().toISOString()}.log`);
-  zkConfigPath = path.resolve(currentDir, '..', '..', 'contract', 'src', 'managed', 'bboard');
+  zkConfigPath = path.resolve(currentDir, '..', '..', 'contract', 'src', 'managed', 'wordle');
   indexer = 'http://127.0.0.1:8088/api/v1/graphql';
   indexerWS = 'ws://127.0.0.1:8088/api/v1/graphql/ws';
   node = 'http://127.0.0.1:9944';
@@ -44,9 +44,9 @@ export class StandaloneConfig implements Config {
 }
 
 export class TestnetRemoteConfig implements Config {
-  privateStateStoreName = 'bboard-private-state';
+  privateStateStoreName = 'wordle-private-state';
   logDir = path.resolve(currentDir, '..', 'logs', 'testnet-remote', `${new Date().toISOString()}.log`);
-  zkConfigPath = path.resolve(currentDir, '..', '..', 'contract', 'src', 'managed', 'bboard');
+  zkConfigPath = path.resolve(currentDir, '..', '..', 'contract', 'src', 'managed', 'wordle');
   indexer = 'https://indexer.testnet-02.midnight.network/api/v1/graphql';
   indexerWS = 'wss://indexer.testnet-02.midnight.network/api/v1/graphql/ws';
   node = 'https://rpc.testnet-02.midnight.network';

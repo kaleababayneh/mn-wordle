@@ -1,5 +1,5 @@
 {
-  "name": "@midnight-ntwrk/bboard-cli",
+  "name": "@midnight-ntwrk/wordle-cli",
   "version": "0.1.0",
   "author": "IOG",
   "license": "MIT",
@@ -19,5 +19,8 @@
   "devDependencies": {
     "@types/json-schema": "^7.0.15",
     "@types/node": "^24.10.1"
+  },
+  "dependencies": {
+    "an-array-of-english-words": "^2.0.0"
   }
 }

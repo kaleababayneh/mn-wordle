@@ -1,5 +1,5 @@
 // Browser-compatible word validation using the an-array-of-english-words library
-import englishWords from 'an-array-of-english-words';
+import englishWords from 'an-array-of-english-words/index.json' with { type: "json" };
 
 // Filter to get only 5-letter words and convert to uppercase for fast lookup
 const VALID_WORDLE_WORDS = new Set(

@@ -1,4 +1,4 @@
-import { createRequire } from 'module';
+import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 
 // Load the words using require since it's a JSON file
