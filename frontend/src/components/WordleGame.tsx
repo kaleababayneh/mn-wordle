@@ -16,6 +16,7 @@ import {
   Paper,
 } from '@mui/material';
 import { GameState, type WordleDerivedState, type DeployedWordleAPI, utils } from '../../../api/src/index';
+import { WinnerConfetti, LoserConfetti } from './ConfettiComponents';
 
 interface WordleGameProps {
   api?: DeployedWordleAPI;
@@ -162,7 +163,24 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
   const [error, setError] = useState<string | null>(null);
   const [myGuesses, setMyGuesses] = useState<Array<{word: string, result?: Array<number>}>>([]);
   const [opponentGuesses, setOpponentGuesses] = useState<Array<{word: string, result?: Array<number>}>>([]);
+  const [windowSize, setWindowSize] = useState({
+    width: typeof window !== 'undefined' ? window.innerWidth : 1200,
+    height: typeof window !== 'undefined' ? window.innerHeight : 800,
+  });
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Handle window resize for confetti
+  useEffect(() => {
+    const handleResize = () => {
+      setWindowSize({
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const canJoinAsPlayer1 = state?.gameState === GameState.WAITING_P1;
   const canJoinAsPlayer2 = state?.gameState === GameState.WAITING_P2;
@@ -278,6 +296,25 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
       setCurrentGuess('');
     }
   }, [canMakeGuess]);
+
+  // Helper functions to determine winner/loser for confetti
+  const isCurrentPlayerWinner = (): boolean => {
+    if (!state || !isGameComplete) return false;
+    if (state.gameState === GameState.DRAW) return false;
+    
+    const playerWon = (state.isPlayer1 && state.gameState === GameState.P1_WINS) || 
+                      (state.isPlayer2 && state.gameState === GameState.P2_WINS);
+    return playerWon;
+  };
+
+  const isCurrentPlayerLoser = (): boolean => {
+    if (!state || !isGameComplete) return false;
+    if (state.gameState === GameState.DRAW) return false;
+    
+    const playerLost = (state.isPlayer1 && state.gameState === GameState.P2_WINS) || 
+                       (state.isPlayer2 && state.gameState === GameState.P1_WINS);
+    return playerLost;
+  };
 
   const getGameStateLabel = (gameState: GameState): string => {
     switch (gameState) {
@@ -592,8 +629,19 @@ const WordleGame: React.FC<WordleGameProps> = ({ api, state, isLoading }) => {
           {/* Game Complete */}
           {isGameComplete && (
             <Box sx={{ textAlign: 'center', py: 2 }}>
+              {/* Confetti for winner/loser */}
+              {isCurrentPlayerWinner() && (
+                <WinnerConfetti width={windowSize.width} height={windowSize.height} />
+              )}
+              {isCurrentPlayerLoser() && (
+                <LoserConfetti width={windowSize.width} height={windowSize.height} />
+              )}
+              
               <Typography variant="h4" gutterBottom>
                 {getGameStateLabel(state.gameState)}
+                {isCurrentPlayerWinner() && ' 🎉'}
+                {isCurrentPlayerLoser() && ' 😢'}
+                {state.gameState === GameState.DRAW && ' 🤝'}
               </Typography>
               {state.gameState !== GameState.DRAW && (
                 <Typography variant="h6">

@@ -16,3 +16,4 @@
 export * from './Layout';
 export { default as WordleGame } from './WordleGame';
 export { default as WordleGameWrapper } from './WordleGameWrapper';
+export * from './ConfettiComponents';
